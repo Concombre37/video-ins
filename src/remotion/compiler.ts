@@ -24,6 +24,7 @@ import {
 } from "remotion";
 import * as THREE from "three";
 import { PRODUCT_IMAGES, exposeProductImages } from "./product-images";
+import { BRAND } from "./brand";
 
 exposeProductImages();
 
@@ -154,6 +155,7 @@ export function compileCode(code: string): CompilationResult {
       "flip",
       "clockWipe",
       "PRODUCT_IMAGES",
+      "BRAND",
       wrappedCode,
     );
 
@@ -201,6 +203,7 @@ export function compileCode(code: string): CompilationResult {
       flip,
       clockWipe,
       PRODUCT_IMAGES,
+      BRAND,
     );
 
     if (typeof Component !== "function") {

@@ -101,6 +101,18 @@ export function useConversationState() {
     });
   }, []);
 
+  /** Recharge une conversation sauvegardée (historique). */
+  const restoreMessages = useCallback((messages: ConversationMessage[]) => {
+    const lastAi = [...messages].reverse().find((m) => m.role === "assistant");
+    lastAiCodeRef.current = lastAi?.codeSnapshot ?? "";
+    setState({
+      messages,
+      hasManualEdits: false,
+      lastGenerationTimestamp: lastAi?.timestamp ?? null,
+      pendingMessage: undefined,
+    });
+  }, []);
+
   const setPendingMessage = useCallback((skills?: string[]) => {
     setState((prev) => ({
       ...prev,
@@ -166,6 +178,7 @@ export function useConversationState() {
     addErrorMessage,
     markManualEdit,
     clearConversation,
+    restoreMessages,
     getFullContext,
     getPreviouslyUsedSkills,
     getLastUserAttachedImages,

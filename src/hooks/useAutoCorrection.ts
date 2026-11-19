@@ -94,7 +94,7 @@ export function useAutoCorrection({
         compilationError,
       );
 
-      onAddErrorMessage(`Compilation error: ${compilationError}`, "validation");
+      onAddErrorMessage(`Erreur dans le code : ${compilationError}. Correction automatique…`, "validation");
       onTriggerCorrection("Fix the compilation error", {
         error: compilationError,
         attemptNumber: nextAttempt,

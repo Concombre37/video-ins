@@ -281,7 +281,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           <StreamingOverlay
             visible={isStreaming}
             message={
-              streamPhase === "reasoning" ? "Thinking..." : "Generating code..."
+              streamPhase === "reasoning" ? "Claude réfléchit…" : "Écriture du code…"
             }
           />
           <MonacoEditor

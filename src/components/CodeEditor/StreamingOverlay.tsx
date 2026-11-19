@@ -9,7 +9,7 @@ interface StreamingOverlayProps {
 
 export const StreamingOverlay: React.FC<StreamingOverlayProps> = ({
   visible,
-  message = "Generating code...",
+  message = "Écriture du code…",
 }) => {
   if (!visible) return null;
 

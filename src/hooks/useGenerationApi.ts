@@ -18,6 +18,7 @@ import type {
   ModelId,
   StreamPhase,
 } from "@/types/generation";
+import type { VideoFormat } from "@/lib/video-settings";
 import { useCallback, useState } from "react";
 
 interface FailedEditInfo {
@@ -58,6 +59,9 @@ interface GenerationContext {
   hasManualEdits: boolean;
   errorCorrection?: ErrorCorrectionContext;
   frameImages?: string[];
+  format: VideoFormat;
+  durationInFrames: number;
+  fps: number;
 }
 
 interface UseGenerationApiReturn {
@@ -92,6 +96,9 @@ export function useGenerationApi(): UseGenerationApiReturn {
         hasManualEdits,
         errorCorrection,
         frameImages,
+        format,
+        durationInFrames,
+        fps,
       } = context;
 
       const {
@@ -139,13 +146,16 @@ export function useGenerationApi(): UseGenerationApiReturn {
             frameImages: orderedImages,
             newProductImageCount: products.length,
             productImageCount: PRODUCT_IMAGES.length,
+            format,
+            durationInFrames,
+            fps,
           }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           const errorMessage =
-            errorData.error || `API error: ${response.status}`;
+            errorData.error || `Erreur du serveur (${response.status})`;
           if (errorData.type === "edit_failed") {
             onError?.(errorMessage, "validation", errorData.failedEdit);
             onErrorMessage?.(errorMessage, "edit_failed", errorData.failedEdit);
@@ -176,7 +186,7 @@ export function useGenerationApi(): UseGenerationApiReturn {
 
         // Handle SSE stream response
         const reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body");
+        if (!reader) throw new Error("Réponse vide du serveur");
 
         const decoder = new TextDecoder();
         let accumulatedText = "";
@@ -202,8 +212,16 @@ export function useGenerationApi(): UseGenerationApiReturn {
                 streamMetadata = {
                   ...streamMetadata,
                   skills: event.skills,
+                  ...(event.model ? { model: event.model } : {}),
                 };
                 onPendingMessage?.(event.skills);
+              } else if (event.type === "cost") {
+                streamMetadata = {
+                  ...streamMetadata,
+                  cost: event.cost,
+                  inputTokens: event.inputTokens,
+                  outputTokens: event.outputTokens,
+                };
               } else if (event.type === "reasoning-start") {
                 onStreamPhaseChange?.("reasoning");
               } else if (event.type === "text-start") {
@@ -213,7 +231,7 @@ export function useGenerationApi(): UseGenerationApiReturn {
                 const codeToShow = stripMarkdownFences(accumulatedText);
                 onCodeGenerated?.(codeToShow);
               } else if (event.type === "error") {
-                throw new Error(event.error);
+                throw new Error(event.errorText ?? event.error);
               }
             } catch (parseError) {
               if (
@@ -233,7 +251,9 @@ export function useGenerationApi(): UseGenerationApiReturn {
         onGenerationComplete?.(
           finalCode,
           undefined,
-          streamMetadata.skills?.length ? streamMetadata : undefined,
+          streamMetadata.skills?.length || streamMetadata.model
+            ? streamMetadata
+            : undefined,
         );
 
         const validation = validateGptResponse(finalCode);
@@ -245,7 +265,7 @@ export function useGenerationApi(): UseGenerationApiReturn {
         const errorMessage =
           error instanceof Error
             ? error.message
-            : "An unexpected error occurred";
+            : "Erreur inattendue";
         onError?.(errorMessage, "api");
       } finally {
         setIsLoading(false);
