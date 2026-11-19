@@ -14,6 +14,10 @@ export interface AssistantMetadata {
   edits?: EditOperation[];
   /** Model used for generation */
   model?: string;
+  /** Coût de la génération en USD (tous les appels à Claude) */
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface ConversationMessage {

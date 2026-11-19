@@ -7,6 +7,40 @@ import {
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject, streamText } from "ai";
 import { z } from "zod";
+import { MODELS } from "@/types/generation";
+import { computeCost, type UsageEntry } from "@/lib/pricing";
+import {
+  DEFAULT_FPS,
+  DEFAULT_FORMAT,
+  DEFAULT_SECONDS,
+  FORMATS,
+  isVideoFormat,
+  type VideoFormat,
+} from "@/lib/video-settings";
+
+/** Consignes de format et de durée, injectées dans le prompt système. */
+function formatSection(format: VideoFormat, durationInFrames: number, fps: number) {
+  const f = FORMATS[format];
+  const seconds = (durationInFrames / fps).toFixed(1);
+  const layout =
+    format === "9:16"
+      ? `- VERTICAL ${f.width}x${f.height} (9:16) for Instagram Reels / TikTok / YouTube Shorts.
+- Design for mobile: huge bold text (titles 110-180px), safe margins of 80px on the sides,
+  keep important content away from the top 200px and bottom 350px (Instagram UI overlays).`
+      : format === "1:1"
+        ? `- SQUARE ${f.width}x${f.height} (1:1) for an Instagram / Facebook feed post.
+- Titles 90-150px, safe margins of 80px on every side, keep the layout centered and compact.`
+        : `- LANDSCAPE ${f.width}x${f.height} (16:9) for YouTube / websites.
+- Titles 100-170px, safe margins of 100px, use the horizontal space (side-by-side layouts work well).`;
+  return `## VIDEO FORMAT AND DURATION (CRITICAL)
+
+${layout}
+- Always read the size from useVideoConfig() (width, height) instead of hard-coding it, so nothing overflows.
+- The video lasts EXACTLY ${durationInFrames} frames at ${fps} fps (${seconds} s). Plan every scene so the
+  whole story fits in that time, and keep the final call-to-action on screen for the last 1.5-2 seconds.
+- Short-form rhythm: a strong hook in the first 1-2 seconds, then a new beat every 1.5-3 seconds.
+- Text must NEVER be cut off or overflow the frame: wrap long lines, reduce font size if needed.`;
+}
 
 const VALIDATION_PROMPT = `You are a prompt classifier for a motion graphics generation tool.
 
@@ -96,13 +130,14 @@ NEVER use these as variable names - they shadow imports:
 - ALWAYS use fontFamily: 'Inter, sans-serif'
 - Keep colors minimal (2-4 max)
 - ALWAYS set backgroundColor on AbsoluteFill from frame 0 - never fade in backgrounds
+- interpolate() with extrapolateLeft "clamp" returns the FIRST output value for every frame BEFORE the first
+  input point. For anything that must be invisible before it starts (flashes, overlays, late elements), the output
+  range MUST start at 0: e.g. interpolate(frame, [start - 1, start, start + 2, start + 8], [0, 0.9, 0.9, 0], clamp).
+  Never write interpolate(frame, [start, start + 2, start + 8], [0.9, 0.9, 0], clamp): it covers the screen
+  for all frames before start.
+- Full-screen overlays (white flashes, color wipes) must be visible for a few frames only, never during a scene.
 
-## VIDEO FORMAT (CRITICAL)
-
-- The composition is VERTICAL 1080x1920 (9:16) for Instagram Reels / TikTok / YouTube Shorts.
-- Design for mobile: huge bold text (titles 110-180px), safe margins of 80px on the sides,
-  keep important content away from the top 200px and bottom 350px (Instagram UI overlays).
-- Short-form rhythm: a strong hook in the first 1-2 seconds, then a new beat every 1.5-3 seconds.
+{{FORMAT_SECTION}}
 
 ## PRODUCT PHOTOS (PRODUCT_IMAGES)
 
@@ -112,6 +147,24 @@ products/ads, SHOW the real photos: \`<Img src={PRODUCT_IMAGES[0]} style={{ obje
 - Import Img from "remotion" (never use a plain <img>).
 - Always guard: \`PRODUCT_IMAGES[i % PRODUCT_IMAGES.length]\` and handle an empty array gracefully.
 - Never invent image URLs.
+
+## HYTLABS BRANDING (BRAND) — ALWAYS USE IT
+
+These videos are ads for HytLabs (game-server hosting, website hytlabs.com). A global object \`BRAND\`
+is available WITHOUT import (do not declare or import it):
+- \`BRAND.logo.onDark\` / \`BRAND.logo.onLight\`: horizontal logo (purple "H" symbol + "HytLabs" wordmark),
+  transparent PNG, width/height ratio \`BRAND.logo.aspectRatio\` (about 3.43). onDark has white text (use on dark
+  backgrounds), onLight has black text (use on light backgrounds).
+- \`BRAND.symbol.violet\` / \`.white\` / \`.black\`: the square "H" symbol alone.
+- \`BRAND.colors\`: violet "#6F5CF1" (main brand color), night "#0E0E17" (dark background), light "#F4F4F8",
+  blackFridayYellow "#FFC94A" (only for Black Friday accents).
+- \`BRAND.url\`: "hytlabs.com".
+Rules, unless the user explicitly asks otherwise:
+- Show the logo in EVERY video: e.g. the symbol in the opening hook, and the full horizontal logo
+  (\`<Img src={BRAND.logo.onDark} style={{ width: 700, height: 700 / BRAND.logo.aspectRatio }} />\`) in the final
+  call-to-action scene together with \`BRAND.url\`.
+- Use the brand colors (night background + violet accents) instead of random colors.
+- Never redraw or imitate the logo with shapes or text: always use these images. Never distort them (keep the ratio).
 
 ## OUTPUT FORMAT (CRITICAL)
 
@@ -123,6 +176,11 @@ products/ads, SHOW the real photos: \`<Img src={PRODUCT_IMAGES[0]} style={{ obje
 
 const FOLLOW_UP_SYSTEM_PROMPT = `
 You are an expert at making targeted edits to React/Remotion animation components.
+
+The globals PRODUCT_IMAGES (uploaded product photos) and BRAND (HytLabs logo images BRAND.logo.onDark /
+BRAND.logo.onLight with ratio BRAND.logo.aspectRatio, BRAND.symbol.violet/white/black, BRAND.colors, BRAND.url)
+are available without import. Keep the HytLabs logo visible unless the user asks to remove it, and never redraw
+the logo with shapes or text.
 
 Given the current code and a user request, decide whether to:
 1. Use targeted edits (for small, specific changes)
@@ -167,7 +225,7 @@ const FollowUpResponseSchema = z.object({
   summary: z
     .string()
     .describe(
-      "A brief 1-sentence summary of what changes were made, e.g. 'Changed background color to blue and increased font size'",
+      "A brief 1-sentence summary IN FRENCH of what changes were made, e.g. 'Fond passé en bleu et texte agrandi'",
     ),
   edits: z
     .array(
@@ -301,6 +359,9 @@ interface GenerateRequest {
   newProductImageCount?: number;
   /** Taille totale de PRODUCT_IMAGES côté client */
   productImageCount?: number;
+  format?: VideoFormat;
+  durationInFrames?: number;
+  fps?: number;
 }
 
 const FAST_MODEL = process.env.CLAUDE_FAST_MODEL ?? "claude-haiku-5-5";
@@ -322,13 +383,16 @@ interface GenerateResponse {
     editType: "tool_edit" | "full_replacement";
     edits?: EditOperation[];
     model: string;
+    cost?: number;
+    inputTokens?: number;
+    outputTokens?: number;
   };
 }
 
 export async function POST(req: Request) {
   const {
     prompt,
-    model = "claude-sonnet-5-5",
+    model = "claude-haiku-5-5",
     currentCode,
     conversationHistory = [],
     isFollowUp = false,
@@ -338,15 +402,30 @@ export async function POST(req: Request) {
     frameImages,
     newProductImageCount = 0,
     productImageCount = 0,
+    format: rawFormat,
+    durationInFrames: rawDuration,
+    fps: rawFps,
   }: GenerateRequest = await req.json();
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const format: VideoFormat = isVideoFormat(rawFormat) ? rawFormat : DEFAULT_FORMAT;
+  const fps = Math.min(60, Math.max(10, Number(rawFps) || DEFAULT_FPS));
+  const durationInFrames = Math.min(
+    fps * 60,
+    Math.max(fps * 3, Number(rawDuration) || DEFAULT_SECONDS * fps),
+  );
+  const videoSection = formatSection(format, durationInFrames, fps);
+  // Tokens consommés par chaque appel, pour afficher le coût de la génération
+  const usages: UsageEntry[] = [];
+
+  // OpenRouter (format Messages compatible Anthropic) prioritaire s'il est configuré
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = openRouterKey || process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
     return new Response(
       JSON.stringify({
         error:
-          'The environment variable "ANTHROPIC_API_KEY" is not set. Add it to your .env file and try again.',
+          'Aucune clé API configurée (OPENROUTER_API_KEY ou ANTHROPIC_API_KEY dans le fichier .env).',
       }),
       {
         status: 400,
@@ -356,10 +435,29 @@ export async function POST(req: Request) {
   }
 
   // Format du modèle : "claude-xxx" ou "claude-xxx:thinking"
-  const [modelName, reasoningEffort] = model.split(":");
+  // Seuls les modèles proposés dans l'interface sont acceptés (maîtrise des coûts)
+  const allowed: string[] = MODELS.map((m) => m.id);
+  const [modelName, reasoningEffort] = (
+    allowed.includes(model) ? model : "claude-haiku-5-5"
+  ).split(":");
   const imagesNotice = productImagesNotice(newProductImageCount, productImageCount);
 
-  const anthropic = createAnthropic({ apiKey });
+  const provider = openRouterKey
+    ? createAnthropic({
+        apiKey,
+        baseURL: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "X-Title": "HytLabs Studio",
+        },
+      })
+    : createAnthropic({ apiKey });
+  // "claude-sonnet-5-5" -> "anthropic/claude-sonnet-5.5" pour OpenRouter
+  const toProviderModel = (id: string) =>
+    openRouterKey && !id.includes("/")
+      ? `anthropic/${id.replace(/-(\d+)-(\d+)$/, "-$1.$2")}`
+      : id;
+  const anthropic = (id: string) => provider(toProviderModel(id));
 
   // Validate the prompt first (skip for follow-ups with existing code)
   if (!isFollowUp) {
@@ -370,12 +468,13 @@ export async function POST(req: Request) {
         prompt: `User prompt: "${prompt}"`,
         schema: z.object({ valid: z.boolean() }),
       });
+      usages.push({ model: FAST_MODEL, ...validationResult.usage });
 
       if (!validationResult.object.valid) {
         return new Response(
           JSON.stringify({
             error:
-              "No valid motion graphics prompt. Please describe an animation or visual content you'd like to create.",
+              "Cette demande ne décrit pas une vidéo. Décris l'animation ou la pub que tu veux créer.",
             type: "validation",
           }),
           { status: 400, headers: { "Content-Type": "application/json" } },
@@ -399,6 +498,7 @@ export async function POST(req: Request) {
       }),
     });
     detectedSkills = skillResult.object.skills;
+    usages.push({ model: FAST_MODEL, ...skillResult.usage });
     console.log("Detected skills:", detectedSkills);
   } catch (skillError) {
     console.error("Skill detection error:", skillError);
@@ -420,9 +520,10 @@ export async function POST(req: Request) {
 
   // Load skill-specific content only for NEW skills (previously used skills are already in context)
   const skillContent = getCombinedSkillContent(newSkills as SkillName[]);
+  const basePrompt = SYSTEM_PROMPT.replace("{{FORMAT_SECTION}}", videoSection);
   const enhancedSystemPrompt = skillContent
-    ? `${SYSTEM_PROMPT}\n\n## SKILL-SPECIFIC GUIDANCE\n${skillContent}`
-    : SYSTEM_PROMPT;
+    ? `${basePrompt}\n\n## SKILL-SPECIFIC GUIDANCE\n${skillContent}`
+    : basePrompt;
 
   // FOLLOW-UP MODE: Use non-streaming generateObject for faster edits
   if (isFollowUp && currentCode) {
@@ -545,12 +646,13 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
 
       const editResult = await generateObject({
         model: anthropic(modelName),
-        system: FOLLOW_UP_SYSTEM_PROMPT,
+        system: `${FOLLOW_UP_SYSTEM_PROMPT}\n\n${videoSection}`,
         messages: editMessages,
         schema: FollowUpResponseSchema,
       });
 
       const response = editResult.object;
+      usages.push({ model: modelName, ...editResult.usage });
       let finalCode: string;
       let editType: "tool_edit" | "full_replacement";
       let appliedEdits: EditOperation[] | undefined;
@@ -583,7 +685,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
         // Invalid response - missing required fields
         return new Response(
           JSON.stringify({
-            error: "Invalid AI response: missing required fields",
+            error: "Réponse de Claude incomplète. Réessaie.",
             type: "edit_failed",
           }),
           { status: 400, headers: { "Content-Type": "application/json" } },
@@ -599,6 +701,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
           editType,
           edits: appliedEdits,
           model: modelName,
+          ...(await computeCost(usages)),
         },
       };
 
@@ -610,7 +713,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
       console.error("Error in follow-up edit:", error);
       return new Response(
         JSON.stringify({
-          error: "Something went wrong while processing the edit request.",
+          error: "La modification a échoué. Réessaie, ou reformule ta demande.",
         }),
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
@@ -680,6 +783,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
     const metadataEvent = `data: ${JSON.stringify({
       type: "metadata",
       skills: detectedSkills,
+      model: modelName,
     })}\n\n`;
 
     // Create a new stream that prepends metadata before the LLM stream
@@ -702,6 +806,17 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
           if (done) break;
           controller.enqueue(value);
         }
+        // Coût total de la génération (validation + détection + code)
+        try {
+          const total = await result.totalUsage;
+          usages.push({ model: modelName, ...total });
+          const cost = await computeCost(usages);
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "cost", ...cost })}\n\n`),
+          );
+        } catch (costError) {
+          console.error("Cost computation error:", costError);
+        }
         controller.close();
       },
     });
@@ -713,7 +828,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
     console.error("Error generating code:", error);
     return new Response(
       JSON.stringify({
-        error: "Something went wrong while trying to reach the Claude API.",
+        error: "Impossible de joindre Claude pour le moment. Réessaie dans un instant.",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );

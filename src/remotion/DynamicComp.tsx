@@ -7,6 +7,7 @@ import {
 } from "remotion";
 import { compileCode } from "./compiler";
 import { setProductImages } from "./product-images";
+import { withMusic } from "./with-music";
 
 interface DynamicCompProps {
   code: string;
@@ -14,8 +15,10 @@ interface DynamicCompProps {
 }
 
 export const DynamicComp: React.FC = () => {
-  const { code, productImages } = getInputProps() as DynamicCompProps & {
+  const { code, productImages, musicSrc, musicVolume } = getInputProps() as DynamicCompProps & {
     productImages?: string[];
+    musicSrc?: string | null;
+    musicVolume?: number;
   };
   // Rendu CLI / Lambda : les photos produits arrivent via les props
   if (Array.isArray(productImages) && productImages.length > 0) {
@@ -33,14 +36,17 @@ export const DynamicComp: React.FC = () => {
       if (result.error) {
         setError(result.error);
       } else {
-        setComponent(() => result.Component);
+        const Comp = result.Component;
+        setComponent(() =>
+          Comp ? withMusic(Comp, musicSrc ?? null, musicVolume ?? 0.6) : null,
+        );
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       continueRender(handle);
     }
-  }, [code, handle]);
+  }, [code, handle, musicSrc, musicVolume]);
 
   if (error) {
     return (

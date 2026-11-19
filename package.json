@@ -1,7 +1,7 @@
 {
-  "name": "bf-studio",
+  "name": "hytlabs-studio",
   "version": "4.0.379",
-  "description": "G\u00e9n\u00e9rateur de shorts Black Friday (Remotion + Claude)",
+  "description": "HytLabs Studio : pubs vidéo générées avec Claude et Remotion",
   "private": true,
   "repository": {
     "url": "https://github.com/remotion-dev/remotion/tree/main/packages/template-prompt-to-motion-graphics"
@@ -34,6 +34,7 @@
     "@remotion/google-fonts": "^4.0.0",
     "@remotion/lambda": "^4.0.0",
     "@remotion/lottie": "^4.0.0",
+    "@remotion/media": "^4.0.0",
     "@remotion/paths": "^4.0.0",
     "@remotion/player": "^4.0.0",
     "@remotion/shapes": "^4.0.0",

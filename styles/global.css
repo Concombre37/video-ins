@@ -8,35 +8,36 @@
   --geist-quarter-pad: 6px;
   --geist-half-pad: 12px;
   --geist-pad: 24px;
-  --geist-font: "Inter";
+  --geist-font: var(--font-inter), "Inter", system-ui, sans-serif;
 
   --geist-error: #dc2626;
 
   --radius: 0.625rem;
 
-  /* Dark theme colors */
-  --background: #0a0a0a;
-  --background-elevated: #1a1a1a;
-  --background-editor: #1e1e1e;
-  --background-editor-header: #2d2d2d;
-  --background-error: #2a1a1a;
-  --foreground: #ffffff;
-  --primary: #0B84F3;
-  --primary-hover: #0a75d9;
+  /* Thème HytLabs (nuit + violet) */
+  --background: #0e0e17;
+  --background-elevated: #161624;
+  --background-editor: #12121d;
+  --background-editor-header: #1c1c2c;
+  --background-error: #2a1620;
+  --foreground: #f4f4f8;
+  --primary: #6f5cf1;
+  --primary-hover: #5d4ae0;
   --primary-foreground: #ffffff;
-  --secondary: #333;
-  --secondary-foreground: #ffffff;
-  --muted: #111;
-  --muted-foreground: #888;
-  --muted-foreground-dim: #666;
-  --accent: #2a2a2a;
-  --accent-foreground: #ffffff;
+  --secondary: #24243a;
+  --secondary-foreground: #f4f4f8;
+  --muted: #13131f;
+  --muted-foreground: #9a9ab3;
+  --muted-foreground-dim: #6b6b85;
+  --accent: #23233a;
+  --accent-foreground: #f4f4f8;
   --destructive: #dc2626;
   --destructive-foreground: #f87171;
-  --border: #333;
-  --border-dim: #222;
-  --input: #0f0f0f;
-  --ring: #333;
+  --border: #2a2a42;
+  --border-dim: #1f1f33;
+  --input: #10101a;
+  --ring: #6f5cf1;
+  --warning: #ffc94a;
 }
 
 @theme {
@@ -104,6 +105,8 @@ body {
   --color-border-dim: var(--border-dim);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-inter), "Inter", system-ui, sans-serif;
 }
 
 @layer base {
@@ -113,4 +116,21 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Détails HytLabs Studio */
+body {
+  background-image: radial-gradient(1200px 600px at 15% -10%, rgba(111, 92, 241, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, rgba(111, 92, 241, 0.08), transparent 60%);
+  background-attachment: fixed;
+}
+input[type="range"] {
+  accent-color: var(--primary);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::selection {
+  background: rgba(111, 92, 241, 0.45);
 }

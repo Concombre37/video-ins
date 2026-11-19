@@ -54,7 +54,7 @@ export function useImageAttachments(): UseImageAttachmentsReturn {
     if (oversizedFiles.length > 0) {
       const fileNames = oversizedFiles.map((f) => f.name).join(", ");
       setError(
-        `${oversizedFiles.length === 1 ? "File" : "Files"} too large (max ${MAX_FILE_SIZE_MB}MB): ${fileNames}`,
+        `${oversizedFiles.length === 1 ? "Fichier trop lourd" : "Fichiers trop lourds"} (max ${MAX_FILE_SIZE_MB} Mo) : ${fileNames}`,
       );
     }
 

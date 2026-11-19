@@ -28,7 +28,7 @@ export function validateGptResponse(response: string): ValidationResult {
     return {
       isValid: false,
       error:
-        "The response was not a valid motion graphics component. Please try a different prompt.",
+        "Claude n'a pas renvoyé une animation valide. Essaie une autre formulation.",
     };
   }
 

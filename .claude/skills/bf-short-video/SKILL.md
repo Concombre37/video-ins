@@ -1,11 +1,13 @@
 ---
 name: bf-short-video
-description: Créer une vidéo courte verticale (Reel / Short / TikTok 9:16) de promo Black Friday à partir de photos produits, et la rendre en MP4 prête à publier sur Instagram. À utiliser quand on demande une pub, un reel, un short ou une vidéo promo pour un produit.
+description: Créer une pub vidéo HytLabs (Reel / Short / TikTok 9:16, post 1:1 ou YouTube 16:9) avec logo et musique, et la rendre en MP4 prête à publier. À utiliser quand on demande une pub, un reel, un short ou une vidéo promo.
 ---
 
-# Créer un short promo Black Friday
+# Créer une pub vidéo HytLabs
 
-Projet : BF Studio (Next.js + Remotion). Format fixe 1080x1920, 30 fps.
+Projet : HytLabs Studio (Next.js + Remotion). Formats 9:16 (1080x1920, défaut), 1:1 (1080x1080), 16:9 (1920x1080), 30 fps.
+Le logo et les couleurs HytLabs sont disponibles dans le code via la globale `BRAND` (sans import) :
+`BRAND.logo.onDark` / `onLight` (ratio `BRAND.logo.aspectRatio`), `BRAND.symbol.violet`, `BRAND.colors`, `BRAND.url`.
 
 ## Étapes
 
@@ -16,11 +18,13 @@ Projet : BF Studio (Next.js + Remotion). Format fixe 1080x1920, 30 fps.
    - Photos via le tableau global `PRODUCT_IMAGES` (sans import) : `<Img src={PRODUCT_IMAGES[i % PRODUCT_IMAGES.length]} />`.
    - Partir de l'exemple `src/examples/code/black-friday-promo.ts` et suivre `src/skills/promo-ad.md`
      et `src/skills/product-showcase.md` (hook 1,5 s, 1 photo / 2 s, prix barré, CTA "LIEN EN BIO").
-   - Zones sûres Instagram : rien d'important dans les 200 px du haut ni les 350 px du bas.
+   - Zones sûres Instagram (9:16) : rien d'important dans les 200 px du haut ni les 350 px du bas.
+   - Lire la taille avec `useVideoConfig()` plutôt que la coder en dur ; logo HytLabs dans chaque vidéo.
 3. **Rendre** :
    ```bash
-   node scripts/render-short.mjs --code out/<nom>.tsx --images public/products/a.jpg,public/products/b.jpg --seconds 12 --out out/<nom>.mp4
+   node scripts/render-short.mjs --code out/<nom>.tsx --images public/products/a.jpg,public/products/b.jpg --seconds 12 --format 9:16 --music energique --out out/<nom>.mp4
    ```
+   Musiques : `energique`, `gaming`, `epique`, `chill`, `none` ou chemin d'un fichier audio ; `--volume 0.6`.
    Sans `--code`, l'exemple Black Friday intégré est utilisé. Dans un conteneur sans Chrome Remotion,
    définir `REMOTION_BROWSER=/chemin/vers/chromium`.
 4. **Vérifier** : extraire 3-4 images (`ffmpeg -ss 2 -i out/x.mp4 -frames:v 1 f.png`) et les regarder

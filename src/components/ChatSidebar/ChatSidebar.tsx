@@ -10,19 +10,14 @@ import type {
   EditOperation,
   ErrorCorrectionContext,
 } from "@/types/conversation";
-import {
-  MODELS,
-  type GenerationErrorType,
-  type ModelId,
-  type StreamPhase,
-} from "@/types/generation";
-import { PanelLeftClose, PanelLeftOpen, RotateCcw } from "lucide-react";
+import type { VideoFormat } from "@/lib/video-settings";
+import type { GenerationErrorType, ModelId, StreamPhase } from "@/types/generation";
+import { MessagesSquare, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import {
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
   type ComponentType,
 } from "react";
 import { ChatHistory } from "./ChatHistory";
@@ -74,9 +69,12 @@ interface ChatSidebarProps {
   onClearPendingMessage?: () => void;
   // Frame capture props
   Component?: ComponentType | null;
-  fps?: number;
-  durationInFrames?: number;
+  fps: number;
+  durationInFrames: number;
   currentFrame?: number;
+  // Réglages vidéo transmis à Claude
+  model: ModelId;
+  format: VideoFormat;
 }
 
 export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
@@ -104,13 +102,14 @@ export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
       onPendingMessage,
       onClearPendingMessage,
       Component,
-      fps = 30,
-      durationInFrames = 150,
+      fps,
+      durationInFrames,
       currentFrame = 0,
+      model,
+      format,
     },
     ref,
   ) {
-    const [model, setModel] = useState<ModelId>(MODELS[1].id);
     const promptRef = useRef<string>("");
 
     const { isLoading, runGeneration } = useGenerationApi();
@@ -140,6 +139,9 @@ export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
           hasManualEdits,
           errorCorrection,
           frameImages: options?.attachedImages,
+          format,
+          durationInFrames,
+          fps,
         },
         {
           onCodeGenerated,
@@ -164,78 +166,54 @@ export const ChatSidebar = forwardRef<ChatSidebarRef, ChatSidebarProps>(
     return (
       <div
         className={cn(
-          "flex flex-col bg-background transition-all duration-300",
+          "flex flex-col transition-all duration-300",
           isCollapsed
             ? "w-12 shrink-0"
-            : "w-full h-[40vh] min-[1000px]:h-auto min-[1000px]:w-[40%] min-[1000px]:min-w-[320px] min-[1000px]:max-w-[520px] shrink",
+            : "w-full h-[45vh] min-[1100px]:h-auto min-[1100px]:w-[360px] min-[1100px]:shrink-0",
         )}
       >
         {isCollapsed ? (
-          <div className="flex justify-center px-4 mb-3">
+          <div className="flex justify-center pt-1">
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={onToggleCollapse}
               className="text-muted-foreground hover:text-foreground"
+              title="Afficher la discussion"
             >
               <PanelLeftOpen className="w-4 h-4" />
             </Button>
           </div>
         ) : (
-          /* Chat area with subtle backdrop */
-          <div className="flex-1 flex flex-col min-h-0 ml-12 mr-8 mb-8 rounded-xl bg-muted/20 border border-border/30 shadow-sm">
-            {/* Header */}
-            <div className="flex items-start justify-between px-4 pt-4 pb-2">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                Assistant Chat
+          <div className="flex flex-1 min-h-0 flex-col rounded-xl border border-border bg-background-elevated/50">
+            <div className="flex items-center justify-between px-4 pt-3 pb-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <MessagesSquare className="w-4 h-4 text-primary" />
+                Discussion avec Claude
               </h2>
-              <div className="flex items-center gap-1 -mt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Start over? This will reset your animation.",
-                      )
-                    ) {
-                      window.location.href = "/";
-                    }
-                  }}
-                  title="Start over"
-                  className="text-muted-foreground hover:text-foreground text-xs gap-1 h-7 px-2"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Reset
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={onToggleCollapse}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <PanelLeftClose className="w-4 h-4" />
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onToggleCollapse}
+                className="text-muted-foreground hover:text-foreground"
+                title="Masquer la discussion"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </Button>
             </div>
 
-            {/* Messages */}
             <ChatHistory messages={messages} pendingMessage={pendingMessage} />
 
-            {/* Input */}
             <ChatInput
               prompt={prompt}
               onPromptChange={onPromptChange}
-              model={model}
-              onModelChange={setModel}
               isLoading={isLoading}
-              onSubmit={(attachedImages) =>
-                handleGeneration({ attachedImages })
-              }
+              onSubmit={(attachedImages) => handleGeneration({ attachedImages })}
               Component={Component}
               fps={fps}
               durationInFrames={durationInFrames}
               currentFrame={currentFrame}
+              format={format}
             />
           </div>
         )}

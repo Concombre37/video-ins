@@ -39,3 +39,9 @@ out/
 build
 out/
 .env
+
+# historique des vidéos (DATA_DIR par défaut)
+/data
+
+# cache Python
+__pycache__/
