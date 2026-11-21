@@ -9,6 +9,9 @@ import { generateObject, streamText } from "ai";
 import { z } from "zod";
 import { MODELS } from "@/types/generation";
 import { computeCost, type UsageEntry } from "@/lib/pricing";
+import { requireContext } from "@/lib/auth";
+import { canSpend, charge } from "@/lib/budget-store";
+import { brandSection, brandShort } from "@/lib/brand-prompts";
 import {
   DEFAULT_FPS,
   DEFAULT_FORMAT,
@@ -148,23 +151,7 @@ products/ads, SHOW the real photos: \`<Img src={PRODUCT_IMAGES[0]} style={{ obje
 - Always guard: \`PRODUCT_IMAGES[i % PRODUCT_IMAGES.length]\` and handle an empty array gracefully.
 - Never invent image URLs.
 
-## HYTLABS BRANDING (BRAND) — ALWAYS USE IT
-
-These videos are ads for HytLabs (game-server hosting, website hytlabs.com). A global object \`BRAND\`
-is available WITHOUT import (do not declare or import it):
-- \`BRAND.logo.onDark\` / \`BRAND.logo.onLight\`: horizontal logo (purple "H" symbol + "HytLabs" wordmark),
-  transparent PNG, width/height ratio \`BRAND.logo.aspectRatio\` (about 3.43). onDark has white text (use on dark
-  backgrounds), onLight has black text (use on light backgrounds).
-- \`BRAND.symbol.violet\` / \`.white\` / \`.black\`: the square "H" symbol alone.
-- \`BRAND.colors\`: violet "#6F5CF1" (main brand color), night "#0E0E17" (dark background), light "#F4F4F8",
-  blackFridayYellow "#FFC94A" (only for Black Friday accents).
-- \`BRAND.url\`: "hytlabs.com".
-Rules, unless the user explicitly asks otherwise:
-- Show the logo in EVERY video: e.g. the symbol in the opening hook, and the full horizontal logo
-  (\`<Img src={BRAND.logo.onDark} style={{ width: 700, height: 700 / BRAND.logo.aspectRatio }} />\`) in the final
-  call-to-action scene together with \`BRAND.url\`.
-- Use the brand colors (night background + violet accents) instead of random colors.
-- Never redraw or imitate the logo with shapes or text: always use these images. Never distort them (keep the ratio).
+{{BRAND_SECTION}}
 
 ## OUTPUT FORMAT (CRITICAL)
 
@@ -177,10 +164,7 @@ Rules, unless the user explicitly asks otherwise:
 const FOLLOW_UP_SYSTEM_PROMPT = `
 You are an expert at making targeted edits to React/Remotion animation components.
 
-The globals PRODUCT_IMAGES (uploaded product photos) and BRAND (HytLabs logo images BRAND.logo.onDark /
-BRAND.logo.onLight with ratio BRAND.logo.aspectRatio, BRAND.symbol.violet/white/black, BRAND.colors, BRAND.url)
-are available without import. Keep the HytLabs logo visible unless the user asks to remove it, and never redraw
-the logo with shapes or text.
+{{BRAND_SHORT}}
 
 Given the current code and a user request, decide whether to:
 1. Use targeted edits (for small, specific changes)
@@ -390,6 +374,14 @@ interface GenerateResponse {
 }
 
 export async function POST(req: Request) {
+  const ctx = await requireContext();
+  if (ctx instanceof Response) return ctx;
+  if (!(await canSpend(ctx.space))) {
+    return new Response(
+      JSON.stringify({ error: "Crédit épuisé : contacte l'équipe HytLabs pour recharger ton espace." }),
+      { status: 402, headers: { "Content-Type": "application/json" } },
+    );
+  }
   const {
     prompt,
     model = "claude-haiku-5-5",
@@ -520,7 +512,10 @@ export async function POST(req: Request) {
 
   // Load skill-specific content only for NEW skills (previously used skills are already in context)
   const skillContent = getCombinedSkillContent(newSkills as SkillName[]);
-  const basePrompt = SYSTEM_PROMPT.replace("{{FORMAT_SECTION}}", videoSection);
+  const basePrompt = SYSTEM_PROMPT.replace("{{FORMAT_SECTION}}", videoSection).replace(
+    "{{BRAND_SECTION}}",
+    brandSection(ctx.space),
+  );
   const enhancedSystemPrompt = skillContent
     ? `${basePrompt}\n\n## SKILL-SPECIFIC GUIDANCE\n${skillContent}`
     : basePrompt;
@@ -646,7 +641,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
 
       const editResult = await generateObject({
         model: anthropic(modelName),
-        system: `${FOLLOW_UP_SYSTEM_PROMPT}\n\n${videoSection}`,
+        system: `${FOLLOW_UP_SYSTEM_PROMPT.replace("{{BRAND_SHORT}}", brandShort(ctx.space))}\n\n${videoSection}`,
         messages: editMessages,
         schema: FollowUpResponseSchema,
       });
@@ -692,6 +687,8 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
         );
       }
 
+      const editCost = await computeCost(usages);
+      await charge(ctx.space, editCost.cost, { kind: "retouche", by: ctx.session.email });
       // Return the result with metadata
       const responseData: GenerateResponse = {
         code: finalCode,
@@ -701,7 +698,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
           editType,
           edits: appliedEdits,
           model: modelName,
-          ...(await computeCost(usages)),
+          ...editCost,
         },
       };
 
@@ -811,6 +808,7 @@ Analyze the request and decide: use targeted edits (type: "edit") for small chan
           const total = await result.totalUsage;
           usages.push({ model: modelName, ...total });
           const cost = await computeCost(usages);
+          await charge(ctx.space, cost.cost, { kind: isFollowUp ? "retouche" : "generation", by: ctx.session.email });
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: "cost", ...cost })}\n\n`),
           );

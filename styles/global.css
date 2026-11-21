@@ -134,3 +134,21 @@ input[type="range"] {
 ::selection {
   background: rgba(111, 92, 241, 0.45);
 }
+
+/* Espace Elsass SimRacing : bleu course + nuit marine (posé par SpaceProvider sur <html data-space>) */
+:root[data-space="elsass"] {
+  --background: #07111f;
+  --background-elevated: #0d1a2c;
+  --background-editor: #0a1626;
+  --background-editor-header: #12223a;
+  --primary: #1769e8;
+  --primary-hover: #125bcc;
+  --secondary: #172a45;
+  --muted: #0b1728;
+  --muted-foreground: #95a6c2;
+  --muted-foreground-dim: #647592;
+  --accent: #172a45;
+  --border: #1f3352;
+  --border-dim: #15243b;
+  --ring: #1769e8;
+}

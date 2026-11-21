@@ -9,7 +9,8 @@ import {
   MusicPicker,
   OptionLabel,
 } from "@/components/VideoOptions";
-import { AD_TEMPLATES, type AdTemplate } from "@/examples/templates";
+import { AD_TEMPLATES, ELSASS_TEMPLATES, type AdTemplate } from "@/examples/templates";
+import { useSpace } from "@/components/SpaceProvider";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { setPendingVideo } from "@/lib/pending-video";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,10 @@ function Step({ n, title, children, aside }: { n: number; title: string; childre
 }
 
 export function NewVideoForm() {
+  const { me } = useSpace();
+  const isElsass = me.space === "elsass";
+  const brandName = isElsass ? "Elsass SimRacing" : "HytLabs";
+  const templates = isElsass ? ELSASS_TEMPLATES : AD_TEMPLATES;
   const router = useRouter();
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -136,10 +141,10 @@ export function NewVideoForm() {
       <form onSubmit={submit} className="mx-auto w-full max-w-5xl px-6 py-10 flex flex-col gap-10">
         <div className="text-center">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground">
-            Crée une pub vidéo <span className="text-primary">HytLabs</span>
+            Crée une pub vidéo <span className="text-primary">{brandName}</span>
           </h1>
           <p className="mt-3 text-muted-foreground">
-            Choisis un modèle ou décris ta vidéo : Claude l&apos;anime avec le logo et les couleurs HytLabs,
+            Choisis un modèle ou décris ta vidéo : Claude l&apos;anime avec le logo et les couleurs {brandName},
             tu la retouches en discutant, puis tu l&apos;exportes en MP4 avec musique.
           </p>
         </div>
@@ -160,7 +165,7 @@ export function NewVideoForm() {
               <span className="text-sm font-semibold text-foreground">Partir de zéro</span>
               <span className="text-xs text-muted-foreground">Décris toi-même ta vidéo</span>
             </button>
-            {AD_TEMPLATES.map((t) => {
+            {templates.map((t) => {
               const Icon = ICONS[t.icon];
               return (
                 <button
@@ -210,7 +215,9 @@ export function NewVideoForm() {
               placeholder={
                 isDragging
                   ? "Dépose tes images ici…"
-                  : "Ex. : Pub pour nos serveurs Palworld, -25 % ce week-end, ambiance aventure, fin avec le logo et hytlabs.com"
+                  : isElsass
+                    ? "Ex. : Pub pour une soirée course entre potes vendredi soir, 3 sessions achetées = 1 offerte, fin avec le logo et elsass-simracing.fr"
+                    : "Ex. : Pub pour nos serveurs Palworld, -25 % ce week-end, ambiance aventure, fin avec le logo et hytlabs.com"
               }
               className="w-full min-h-[150px] max-h-[360px] resize-y bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground-dim focus:outline-none"
               disabled={isNavigating}

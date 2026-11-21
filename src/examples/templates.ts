@@ -134,3 +134,97 @@ Scène 4 : "À partir de 4,99 € / mois", logo HytLabs complet, "hytlabs.com", 
 Style : professionnel et moderne, mise en page horizontale aérée.`,
   },
 ];
+
+/** Modèles de l'espace Elsass SimRacing (prix et dates à compléter par le client). */
+export const ELSASS_TEMPLATES: AdTemplate[] = [
+  {
+    id: "es-decouverte",
+    title: "Session découverte",
+    description: "Donner envie d'essayer le simulateur",
+    icon: "Sparkles",
+    format: "9:16",
+    seconds: 12,
+    music: "energique",
+    prompt: `Pub Elsass SimRacing pour une session découverte.
+Scène 1 : accroche "T'AS DÉJÀ PILOTÉ ?" en très gros, titres italiques façon course, avec le monogramme ES.
+Scène 2 : "Simulateurs pro · Volant, pédalier, sensations réelles", éléments qui arrivent l'un après l'autre.
+Scène 3 : "Seul, entre potes ou en famille · Dès [âge] ans".
+Scène 4 : logo Elsass SimRacing complet, "Réserve ta session", "elsass-simracing.fr", bouton qui pulse.
+Style : fond bleu nuit, accents bleus, bandes diagonales de vitesse, rythme rapide.`,
+  },
+  {
+    id: "es-cadeau",
+    title: "Bon cadeau",
+    description: "Idée cadeau pour Noël ou un anniversaire",
+    icon: "Gift",
+    format: "9:16",
+    seconds: 10,
+    music: "epique",
+    prompt: `Pub Elsass SimRacing pour les bons cadeaux.
+Scène 1 : "L'IDÉE CADEAU QUI FAIT VROUM" avec un paquet cadeau stylisé.
+Scène 2 : "Offre une session de pilotage sur simulateur" ; "Valable [durée]".
+Scène 3 : "À partir de [prix] €" très gros.
+Scène 4 : logo complet, "Bons cadeaux sur elsass-simracing.fr".
+Style : fond bleu nuit, touches dorées discrètes, ambiance fête.`,
+  },
+  {
+    id: "es-groupes",
+    title: "Groupes et anniversaires",
+    description: "EVG, anniversaires, sorties entre amis",
+    icon: "Dices",
+    format: "9:16",
+    seconds: 12,
+    music: "gaming",
+    prompt: `Pub Elsass SimRacing pour les groupes.
+Scène 1 : "ANNIVERSAIRE ? EVG ? SORTIE ENTRE POTES ?" les trois mots qui claquent l'un après l'autre.
+Scène 2 : "Course privée sur simulateurs, classement et podium".
+Scène 3 : "Jusqu'à [nombre] pilotes en même temps".
+Scène 4 : logo complet, "Réserve ton créneau groupe", "elsass-simracing.fr".
+Style : énergique, bandes diagonales bleues, compte à rebours de départ 3-2-1.`,
+  },
+  {
+    id: "es-entreprise",
+    title: "Team building",
+    description: "Offre pour les entreprises",
+    icon: "MessageCircle",
+    format: "16:9",
+    seconds: 15,
+    music: "chill",
+    prompt: `Vidéo Elsass SimRacing pour les entreprises (team building).
+Scène 1 : "VOTRE ÉQUIPE SUR LA LIGNE DE DÉPART" sobre et premium.
+Scène 2 : trois atouts : "Challenge par équipes", "Privatisation possible", "Accompagnement par nos coachs".
+Scène 3 : "Devis sur demande".
+Scène 4 : logo complet, "elsass-simracing.fr".
+Style : premium, fond bleu nuit, animations fluides, vouvoiement.`,
+  },
+  {
+    id: "es-the-grid",
+    title: "THE GRID",
+    description: "Qualifications de la ligue THE GRID",
+    icon: "Gamepad2",
+    format: "9:16",
+    seconds: 12,
+    music: "epique",
+    prompt: `Pub Elsass SimRacing pour les qualifications THE GRID.
+Scène 1 : "QUALIFIE-TOI POUR THE GRID" énorme, ambiance compétition.
+Scène 2 : "La ligue de simracing qui mène du virtuel au réel".
+Scène 3 : "Viens signer ton meilleur tour chez nous, à Haguenau".
+Scène 4 : logo Elsass SimRacing complet, "elsass-simracing.fr", "Sign up & take the wheel".
+Style : noir et bleu, touches or, compte à rebours, chronomètre qui défile.`,
+  },
+  {
+    id: "es-promo",
+    title: "Promo",
+    description: "Offre limitée ou code promo",
+    icon: "Ticket",
+    format: "9:16",
+    seconds: 10,
+    music: "energique",
+    prompt: `Pub Elsass SimRacing pour une promo limitée.
+Scène 1 : "[réduction] SUR TA SESSION" qui claque à l'écran.
+Scène 2 : "Avec le code [CODE]" dans un ticket.
+Scène 3 : "Jusqu'au [date]".
+Scène 4 : logo complet, "elsass-simracing.fr", bouton "Je réserve".
+Style : rapide et percutant, fond bleu nuit, accents bleus et rouges.`,
+  },
+];

@@ -11,12 +11,16 @@ import {
 
 /**
  * Historique des vidéos, stocké sur disque (côté serveur uniquement).
- *   DATA_DIR/projects/<id>.json   projet : prompts, code, réglages, photos produits
- *   DATA_DIR/renders/<id>/<n>.mp4 rendus MP4 envoyés par le navigateur
+ *   <espace>/projects/<id>.json   projet : prompts, code, réglages, photos produits
+ *   <espace>/renders/<id>/<n>.mp4 rendus MP4 envoyés par le navigateur
+ * (dossier de l'espace : voir space-data.ts)
  */
-export const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
-const PROJECTS = path.join(DATA_DIR, "projects");
-const RENDERS = path.join(DATA_DIR, "renders");
+import { spaceDir } from "./space-data";
+import type { SpaceId } from "./spaces";
+
+export { DATA_DIR } from "./space-data";
+const PROJECTS = (space: SpaceId) => path.join(spaceDir(space), "projects");
+const RENDERS = (space: SpaceId) => path.join(spaceDir(space), "renders");
 
 const ID_RE = /^[a-z0-9-]{8,64}$/;
 const FILE_RE = /^[0-9]{10,16}\.mp4$/;
@@ -67,21 +71,21 @@ export type ProjectSummary = Omit<Project, "code" | "messages" | "productImages"
   musicLabel: string;
 };
 
-export async function saveProject(p: Project) {
+export async function saveProject(space: SpaceId, p: Project) {
   if (!isValidId(p.id)) throw new Error("Identifiant invalide");
-  await fs.mkdir(PROJECTS, { recursive: true });
-  const existing = await getProject(p.id);
+  await fs.mkdir(PROJECTS(space), { recursive: true });
+  const existing = await getProject(space, p.id);
   const merged: Project = { ...p, createdAt: existing?.createdAt ?? p.createdAt };
-  const target = path.join(PROJECTS, `${p.id}.json`);
+  const target = path.join(PROJECTS(space), `${p.id}.json`);
   await fs.writeFile(`${target}.tmp`, JSON.stringify(merged));
   await fs.rename(`${target}.tmp`, target);
   return merged;
 }
 
-export async function getProject(id: string): Promise<Project | null> {
+export async function getProject(space: SpaceId, id: string): Promise<Project | null> {
   if (!isValidId(id)) return null;
   try {
-    const p = JSON.parse(await fs.readFile(path.join(PROJECTS, `${id}.json`), "utf8"));
+    const p = JSON.parse(await fs.readFile(path.join(PROJECTS(space), `${id}.json`), "utf8"));
     // valeurs par défaut pour les projets créés avant l'ajout de ces réglages
     return {
       format: DEFAULT_FORMAT,
@@ -95,10 +99,10 @@ export async function getProject(id: string): Promise<Project | null> {
   }
 }
 
-export async function listRenders(id: string): Promise<RenderInfo[]> {
+export async function listRenders(space: SpaceId, id: string): Promise<RenderInfo[]> {
   if (!isValidId(id)) return [];
   try {
-    const dir = path.join(RENDERS, id);
+    const dir = path.join(RENDERS(space), id);
     const files = (await fs.readdir(dir)).filter(isValidRenderFile);
     const infos = await Promise.all(
       files.map(async (file) => {
@@ -112,16 +116,16 @@ export async function listRenders(id: string): Promise<RenderInfo[]> {
   }
 }
 
-export async function listProjects(): Promise<ProjectSummary[]> {
+export async function listProjects(space: SpaceId): Promise<ProjectSummary[]> {
   let files: string[] = [];
   try {
-    files = (await fs.readdir(PROJECTS)).filter((f) => f.endsWith(".json"));
+    files = (await fs.readdir(PROJECTS(space))).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
   const out: ProjectSummary[] = [];
   for (const f of files) {
-    const p = await getProject(f.replace(".json", ""));
+    const p = await getProject(space, f.replace(".json", ""));
     if (!p) continue;
     out.push({
       id: p.id,
@@ -135,29 +139,29 @@ export async function listProjects(): Promise<ProjectSummary[]> {
       volume: p.volume,
       totalCost: p.totalCost,
       prompts: p.messages.filter((m) => m.role === "user").length,
-      renders: await listRenders(p.id),
+      renders: await listRenders(space, p.id),
       musicLabel: musicLabel(p.music),
     });
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export async function deleteProject(id: string) {
+export async function deleteProject(space: SpaceId, id: string) {
   if (!isValidId(id)) return;
-  await fs.rm(path.join(PROJECTS, `${id}.json`), { force: true });
-  await fs.rm(path.join(RENDERS, id), { recursive: true, force: true });
+  await fs.rm(path.join(PROJECTS(space), `${id}.json`), { force: true });
+  await fs.rm(path.join(RENDERS(space), id), { recursive: true, force: true });
 }
 
-export async function saveRender(id: string, data: Uint8Array) {
+export async function saveRender(space: SpaceId, id: string, data: Uint8Array) {
   if (!isValidId(id)) throw new Error("Identifiant invalide");
-  const dir = path.join(RENDERS, id);
+  const dir = path.join(RENDERS(space), id);
   await fs.mkdir(dir, { recursive: true });
   const file = `${Date.now()}.mp4`;
   await fs.writeFile(path.join(dir, file), data);
   return file;
 }
 
-export function renderPath(id: string, file: string) {
+export function renderPath(space: SpaceId, id: string, file: string) {
   if (!isValidId(id) || !isValidRenderFile(file)) return null;
-  return path.join(RENDERS, id, file);
+  return path.join(RENDERS(space), id, file);
 }

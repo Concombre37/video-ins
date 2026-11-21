@@ -15,3 +15,17 @@ Remotion « Prompt to Motion Graphics » adapté à Claude. Interface en frança
 - Rendu navigateur : `src/helpers/use-rendering.ts` (WebCodecs, Chrome/Edge), archivé dans l'historique.
 - Skills Claude Code : `.claude/skills/` (officiels Remotion + `bf-short-video`).
 - Ne pas laisser de `.tsx` hors de `src/` dans le build : `out/` et `data/` sont exclus du tsconfig.
+
+## Espaces, SSO et médiathèque (2026-11-21)
+
+- Connexion obligatoire (`src/proxy.ts`) par le SSO de hytlabs.com : extension WordPress
+  `hytlabs-studio-sso.php` (mu-plugin, source dans /root/video-studio-deploy/wp) → jeton HMAC court
+  → `/api/auth/sso` → cookie de session signé (`src/lib/auth.ts`, `SSO_SECRET`, `SESSION_SECRET`).
+- Espaces (`src/lib/spaces.ts`) : `hytlabs` (admins) et `elsass` (client Elsass SimRacing). Accès donné dans
+  WordPress (profil utilisateur → « Studio vidéo »), les admins WP voient tout. Données d'un espace :
+  `src/lib/space-data.ts` (HytLabs = DATA_DIR d'origine, autres = DATA_DIR/spaces/<espace>).
+- Identité par espace : `src/remotion/active-brand.ts` (globale BRAND), consignes `src/lib/brand-prompts.ts`,
+  modèles `ELSASS_TEMPLATES`, thème CSS `[data-space="elsass"]`.
+- Médiathèque (`src/lib/media-store.ts`, page `/media`) avec versions ; retouches (`src/lib/requests-store.ts`,
+  page `/requests`) ; crédit en euros par espace (`src/lib/budget-store.ts`, page `/admin`), débité du coût réel
+  de chaque génération ou retouche IA (USD_EUR).

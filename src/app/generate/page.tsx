@@ -9,6 +9,7 @@ import { AnimationPlayer } from "../../components/AnimationPlayer";
 import { ChatSidebar, type ChatSidebarRef } from "../../components/ChatSidebar";
 import { CodeEditor } from "../../components/CodeEditor";
 import { PageLayout } from "../../components/PageLayout";
+import { SpaceProvider } from "../../components/SpaceProvider";
 import { TabPanel } from "../../components/TabPanel";
 import { VideoSettingsPanel } from "../../components/VideoSettingsPanel";
 import { useAnimationState } from "../../hooks/useAnimationState";
@@ -510,7 +511,10 @@ function LoadingFallback() {
 
 const GeneratePage: NextPage = () => (
   <Suspense fallback={<LoadingFallback />}>
-    <GeneratePageContent />
+    {/* l'espace (et donc l'identité BRAND) doit être connu avant de compiler le moindre code */}
+    <SpaceProvider>
+      <GeneratePageContent />
+    </SpaceProvider>
   </Suspense>
 );
 
