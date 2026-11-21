@@ -37,8 +37,28 @@ export interface AiJob {
   delivered?: string;
 }
 
+/** Type de retouche : visuelle (IA + rendu), musique seule ou voix off seule (traitées sans IA de code). */
+export type RequestKind = "visuel" | "musique" | "voix";
+export const KIND_LABEL: Record<RequestKind, string> = { visuel: "Visuel", musique: "Musique", voix: "Voix off" };
+
+export type MusicSpec =
+  | { source: "track"; id: string }
+  | { source: "media"; mediaId: string; title?: string }
+  | { source: "ia"; prompt: string };
+
+export interface AudioSpec {
+  /** version du média à partir de laquelle travailler (dernière si absent) */
+  baseVersion?: number;
+  music?: { pick: MusicSpec; mode: "remplacer" | "mixer"; volume: number };
+  voice?: { text: string; voiceId: string; speed: number; start: "debut" | "fin" | number; duck: boolean; volume: number };
+}
+
 export interface RetouchRequest {
   id: string;
+  kind?: RequestKind;
+  audio?: AudioSpec;
+  /** emails à chaque nouveauté (livraison, réponse de l'équipe) : non par défaut */
+  notify?: boolean;
   target: { type: "media" | "project"; id: string; title: string };
   /** instant de la vidéo concerné, ex. « 0:52 » */
   timecode?: string;
@@ -62,13 +82,26 @@ export async function listRequests(space: SpaceId): Promise<RetouchRequest[]> {
 
 export async function createRequest(
   space: SpaceId,
-  input: { target: RetouchRequest["target"]; timecode?: string; text: string; by: string; byName: string; staff: boolean },
+  input: {
+    target: RetouchRequest["target"];
+    timecode?: string;
+    text: string;
+    by: string;
+    byName: string;
+    staff: boolean;
+    kind: RequestKind;
+    audio?: AudioSpec;
+    notify: boolean;
+  },
 ) {
   return withLock(file(space), async () => {
     const list = await readJson<RetouchRequest[]>(file(space), []);
     const now = Date.now();
     const r: RetouchRequest = {
       id: `${now.toString(36)}-${crypto.randomBytes(3).toString("hex")}`,
+      kind: input.kind,
+      audio: input.audio,
+      notify: input.notify,
       target: { ...input.target, title: input.target.title.slice(0, 200) },
       timecode: input.timecode?.slice(0, 40) || undefined,
       status: "nouvelle",
@@ -113,13 +146,14 @@ export async function markSeen(space: SpaceId) {
 export async function updateRequest(
   space: SpaceId,
   id: string,
-  patch: { status?: RequestStatus; message?: Omit<RequestMessage, "at"> },
+  patch: { status?: RequestStatus; message?: Omit<RequestMessage, "at">; notify?: boolean },
 ) {
   return withLock(file(space), async () => {
     const list = await readJson<RetouchRequest[]>(file(space), []);
     const r = list.find((x) => x.id === id);
     if (!r) return null;
     if (patch.status && patch.status in STATUS_LABEL) r.status = patch.status;
+    if (typeof patch.notify === "boolean") r.notify = patch.notify;
     if (patch.message?.text?.trim()) {
       r.messages.push({ ...patch.message, text: patch.message.text.slice(0, 4000), at: Date.now() });
       // un client qui relance une demande livrée la rouvre

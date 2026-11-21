@@ -2,9 +2,9 @@
 
 import { PageLayout } from "@/components/PageLayout";
 import { useSpace } from "@/components/SpaceProvider";
-import type { RequestStatus, RetouchRequest } from "@/lib/requests-store";
+import type { RequestKind, RequestStatus, RetouchRequest } from "@/lib/requests-store";
 import { cn } from "@/lib/utils";
-import { Bot, Clock, Download, Film, Loader2, MessageSquareText, RotateCcw, Send, Upload } from "lucide-react";
+import { Bell, BellOff, Bot, Clock, Download, Film, Loader2, MessageSquareText, Mic, Music2, RotateCcw, Send, Upload } from "lucide-react";
 import type { NextPage } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,15 +15,22 @@ const STATUS: Record<RequestStatus, { label: string; cls: string }> = {
   livree: { label: "Livrée", cls: "bg-emerald-500/15 text-emerald-300" },
   fermee: { label: "Fermée", cls: "bg-secondary text-muted-foreground" },
 };
+const KIND: Record<RequestKind, { label: string; Icon: typeof Film }> = {
+  visuel: { label: "Visuel", Icon: Film },
+  musique: { label: "Musique", Icon: Music2 },
+  voix: { label: "Voix off", Icon: Mic },
+};
 const when = (t: number) => new Date(t).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
 
-function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolean; onChanged: () => void }) {
+function RequestCard({ r, admin, me, onChanged }: { r: RetouchRequest; admin: boolean; me: string; onChanged: () => void }) {
+  const kind = KIND[r.kind ?? "visuel"];
+  const visual = (r.kind ?? "visuel") === "visuel";
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
-  const patch = async (body: { status?: RequestStatus; text?: string; retry?: boolean }) => {
+  const patch = async (body: { status?: RequestStatus; text?: string; retry?: boolean; notify?: boolean }) => {
     setBusy(true);
     setError(null);
     try {
@@ -79,15 +86,29 @@ function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolea
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-            <Film className="w-4 h-4 shrink-0 text-primary" />
+            <kind.Icon className="w-4 h-4 shrink-0 text-primary" />
             <span className="truncate">{r.target.title}</span>
           </h2>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground-dim">
+            <span className="rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">{kind.label}</span>
             <Clock className="w-3.5 h-3.5" /> {when(r.createdAt)} · par {r.byName}
             {r.timecode && <span className="rounded bg-secondary px-1.5 py-0.5 text-muted-foreground">à {r.timecode}</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {(admin || r.by === me) && (
+            <button
+              onClick={() => patch({ notify: !r.notify })}
+              disabled={busy}
+              title={r.notify ? "Emails activés : clique pour ne plus être prévenu" : "Être prévenu par email des nouveautés sur cette demande"}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs",
+                r.notify ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {r.notify ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />} {r.notify ? "Emails activés" : "Sans email"}
+            </button>
+          )}
           {admin ? (
             <select
               value={r.status}
@@ -124,7 +145,7 @@ function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolea
             <Bot className="w-4 h-4 text-primary" />
           )}
           <span className="text-foreground">
-            Retouche automatique :{" "}
+            {visual ? "Retouche automatique" : kind.label} :{" "}
             {r.ai.state === "en_attente" && "en file d'attente"}
             {r.ai.state === "en_cours" && `${r.ai.step ?? "en cours"}${r.ai.progress ? ` · ${Math.round(r.ai.progress * 100)} %` : ""}`}
             {r.ai.state === "terminee" && `livrée (${r.ai.delivered ?? "nouvelle version"})`}
@@ -165,7 +186,13 @@ function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolea
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={2}
-            placeholder={admin ? "Réponse au client (ou note jointe à la version livrée)" : "Pas tout à fait ça ? Précise ici, l'IA relance la retouche…"}
+            placeholder={
+              admin
+                ? "Réponse au client (ou note jointe à la version livrée)"
+                : visual
+                  ? "Pas tout à fait ça ? Précise ici, l'IA relance la retouche…"
+                  : "Une remarque ? L'équipe te répond ici (pour d'autres réglages, refais une demande depuis la médiathèque)"
+            }
             className="min-w-0 flex-1 rounded-lg border border-border bg-background p-2 text-sm text-foreground placeholder:text-muted-foreground-dim focus:outline-none focus:border-primary"
           />
           <button
@@ -284,7 +311,7 @@ function Requests() {
           </div>
         )}
         {shown.map((r) => (
-          <RequestCard key={r.id} r={r} admin={me.user.admin} onChanged={load} />
+          <RequestCard key={r.id} r={r} admin={me.user.admin} me={me.user.email} onChanged={load} />
         ))}
       </div>
     </main>

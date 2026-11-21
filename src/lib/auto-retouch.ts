@@ -7,9 +7,12 @@ import { signSession } from "./auth";
 import { getProject, listRenders, renderPath, saveProject, saveRender, type Project, type ProjectSource } from "./history-store";
 import { addVersion, getMedia, mediaFilePath, previewPath } from "./media-store";
 import { notifyClient, notifyStaff } from "./notify";
+import { generateMusic, tts } from "./audio-ai";
+import { canSpend, charge } from "./budget-store";
 import { getRequest, listRequests, setAi, updateRequest, type RetouchRequest } from "./requests-store";
 import { SPACE_IDS, SPACES, type SpaceId } from "./spaces";
-import { DEFAULT_VOLUME, FORMATS, musicSrc, type VideoFormat } from "./video-settings";
+import { DEFAULT_VOLUME, FORMATS, MUSIC_TRACKS, musicSrc, type VideoFormat } from "./video-settings";
+import { isVoiceId, voiceName } from "./voices";
 
 /**
  * Retouche automatique : dès qu'une demande arrive (ou que le client y répond), l'IA (OpenRouter) modifie
@@ -320,6 +323,7 @@ async function render(
 async function handle({ space, id }: Job) {
   const r = await getRequest(space, id);
   if (!r) return;
+  if (r.kind === "musique" || r.kind === "voix") return handleAudio({ space, id }, r);
   const step = (s: string, progress = 0) => setAi(space, id, { state: "en_cours", step: s, progress });
   await setAi(space, id, { state: "en_cours", step: "Analyse de la vidéo", progress: 0, startedAt: Date.now(), error: undefined });
   await updateRequest(space, id, { status: "en_cours" });
@@ -425,12 +429,21 @@ async function handle({ space, id }: Job) {
     },
   });
   await setAi(space, id, { state: "terminee", step: "Livrée", progress: 1, finishedAt: Date.now(), delivered: where });
-  await notifyClient(
-    r.by,
-    "Ta retouche vidéo est prête",
-    [`Bonjour ${r.byName},`, `La retouche demandée sur « ${r.target.title} » est terminée.`, summary, `Tu la trouves en ${where}.`].filter(Boolean),
-    { label: "Voir la retouche", url: "https://video.hytlabs.com/requests" },
-  );
+  await delivered_(space, id, summary, where);
+}
+
+/** Fin commune d'une retouche livrée : email au client s'il l'a demandé, message à l'équipe. */
+async function delivered_(space: SpaceId, id: string, summary: string, where: string) {
+  const r = await getRequest(space, id);
+  if (!r) return;
+  if (r.notify) {
+    await notifyClient(
+      r.by,
+      "Ta retouche vidéo est prête",
+      [`Bonjour ${r.byName},`, `La retouche demandée sur « ${r.target.title} » est terminée.`, summary, `Tu la trouves en ${where}.`].filter(Boolean),
+      { label: "Voir la retouche", url: "https://video.hytlabs.com/requests" },
+    );
+  }
   await notifyStaff(`✅ Retouche automatique livrée (${SPACES[space].name}) : « ${r.target.title} » — ${summary}`);
 }
 
@@ -448,11 +461,152 @@ async function fail({ space, id }: Job, reason: string) {
       text: `Je n'ai pas pu faire cette retouche automatiquement (${reason.slice(0, 300)}). L'équipe HytLabs prend le relais et te répond ici.`,
     },
   });
-  await notifyClient(
+  if (r.notify) await notifyClient(
     r.by,
     "Ta demande de retouche est prise en charge",
     [`Bonjour ${r.byName},`, `La retouche demandée sur « ${r.target.title} » demande une intervention de l'équipe HytLabs.`, "Nous te répondons dans le studio dès que possible."],
     { label: "Suivre la demande", url: "https://video.hytlabs.com/requests" },
   );
   await notifyStaff(`⚠️ Retouche automatique impossible (${SPACES[space].name}) : « ${r.target.title} » — ${reason}\nhttps://video.hytlabs.com/requests`);
+}
+
+/* ── Retouches audio (musique seule, voix off seule) ─────────────── */
+
+async function probeAudio(file: string) {
+  const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=codec_type", "-of", "json", file]);
+  const d = JSON.parse(stdout);
+  return {
+    duration: Number(d.format?.duration) || 0,
+    hasAudio: (d.streams ?? []).some((x: { codec_type?: string }) => x.codec_type === "audio"),
+  };
+}
+
+/** Assemble la vidéo (image copiée telle quelle) et la nouvelle bande son. */
+async function mux(video: string, audioIn: string[], filter: string, duration: number, out: string) {
+  const common = ["-loglevel", "error", "-y", "-i", video, ...audioIn, "-filter_complex", filter, "-map", "0:v:0", "-map", "[a]", "-t", duration.toFixed(3)];
+  const audio = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out];
+  try {
+    await run("ffmpeg", [...common, "-c:v", "copy", ...audio], { maxBuffer: 1 << 24 });
+  } catch {
+    // codec vidéo non accepté dans un MP4 : on réencode l'image
+    await run("ffmpeg", [...common, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", ...audio], { maxBuffer: 1 << 24 });
+  }
+}
+
+async function handleAudio({ space, id }: Job, r: RetouchRequest) {
+  const step = (s: string, progress = 0) => setAi(space, id, { state: "en_cours", step: s, progress });
+  await setAi(space, id, { state: "en_cours", step: "Préparation du son", progress: 0, startedAt: Date.now(), error: undefined });
+  await updateRequest(space, id, { status: "en_cours" });
+  const spec = r.audio;
+  if (!spec || (r.kind === "musique" && !spec.music) || (r.kind === "voix" && !spec.voice)) throw new Impossible("réglages audio manquants");
+
+  // vidéo de départ : version choisie du média, ou dernier rendu du projet
+  let base: string;
+  let mediaId: string | null = null;
+  if (r.target.type === "media") {
+    const item = await getMedia(space, r.target.id);
+    if (!item) throw new Error("Média introuvable");
+    if (item.kind !== "video") throw new Impossible("la musique et la voix off ne se changent que sur une vidéo");
+    const f = mediaFilePath(space, item, spec.baseVersion) ?? mediaFilePath(space, item);
+    if (!f) throw new Error("fichier du média introuvable");
+    base = f.path;
+    mediaId = item.id;
+  } else {
+    const project = await getProject(space, r.target.id);
+    if (!project) throw new Error("Projet introuvable");
+    const last = (await listRenders(space, project.id))[0];
+    if (!last) throw new Impossible("exporte d'abord la vidéo du projet");
+    const p = renderPath(space, project.id, last.file);
+    if (!p) throw new Error("rendu du projet introuvable");
+    base = p;
+  }
+  if (!(await canSpend(space))) throw new Impossible("le crédit de l'espace est épuisé");
+  const { duration, hasAudio } = await probeAudio(base);
+  if (!(duration > 0)) throw new Error("durée de la vidéo illisible");
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "audio-"));
+  const out = path.join(tmp, "out.mp4");
+  let summary: string;
+  let cost = 0;
+  try {
+    if (r.kind === "musique") {
+      const m = spec.music!;
+      let music: string;
+      let label: string;
+      if (m.pick.source === "track") {
+        const pick = m.pick;
+        const t = MUSIC_TRACKS.find((x) => x.id === pick.id);
+        if (!t) throw new Impossible("piste inconnue");
+        music = path.join(process.cwd(), "public", t.src);
+        label = `la piste « ${t.label} »`;
+      } else if (m.pick.source === "media") {
+        const item = await getMedia(space, m.pick.mediaId);
+        const f = item && item.kind === "audio" ? mediaFilePath(space, item) : null;
+        if (!f) throw new Impossible("le fichier de musique n'est plus dans la médiathèque");
+        music = f.path;
+        label = `« ${item!.title} »`;
+      } else {
+        await step("Composition de la musique par l'IA");
+        const g = await generateMusic(m.pick.prompt, duration);
+        cost += g.cost;
+        music = path.join(tmp, "musique.mp3");
+        await fs.writeFile(music, g.data);
+        label = "une musique composée par l'IA";
+      }
+      await step("Mixage", 0.5);
+      const D = duration.toFixed(3);
+      const fadeOut = Math.max(0, duration - 1.5).toFixed(3);
+      const chain = `[1:a]aresample=48000,atrim=0:${D},asetpts=N/SR/TB,afade=t=in:d=0.3,afade=t=out:st=${fadeOut}:d=1.5,volume=${m.volume.toFixed(2)}`;
+      const filter =
+        m.mode === "mixer" && hasAudio
+          ? `${chain}[m];[0:a]aresample=48000[o];[o][m]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]`
+          : `${chain},apad,alimiter=limit=0.95[a]`;
+      await mux(base, ["-stream_loop", "-1", "-i", music], filter, duration, out);
+      summary = `Musique changée : ${label}, ${m.mode === "mixer" && hasAudio ? "mélangée au son d'origine" : "à la place du son d'origine"}.`;
+    } else {
+      const v = spec.voice!;
+      if (!isVoiceId(v.voiceId)) throw new Impossible("voix inconnue");
+      await step("Enregistrement de la voix off");
+      const t = await tts(v.voiceId, v.text, v.speed);
+      cost += t.cost;
+      const vd = (await probeAudio(t.file)).duration;
+      if (vd > duration) throw new Impossible(`la voix dure ${vd.toFixed(1)} s, plus que la vidéo (${duration.toFixed(1)} s) : raccourcis le texte`);
+      let start = v.start === "debut" ? 0.3 : v.start === "fin" ? duration - vd - 0.4 : v.start;
+      start = Math.max(0, Math.min(start, duration - vd - 0.1));
+      await step("Mixage", 0.5);
+      const ms = Math.round(start * 1000);
+      const voice = `[1:a]aresample=48000,aformat=channel_layouts=stereo,volume=${v.volume.toFixed(2)},adelay=${ms}:all=1,apad`;
+      const filter = !hasAudio
+        ? `${voice},alimiter=limit=0.95[a]`
+        : v.duck
+          ? `${voice},asplit=2[v1][v2];[0:a]aresample=48000,aformat=channel_layouts=stereo[o];[o][v1]sidechaincompress=threshold=0.02:ratio=12:attack=30:release=600[d];[d][v2]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]`
+          : `${voice}[v];[0:a]aresample=48000,aformat=channel_layouts=stereo[o];[o][v]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]`;
+      await mux(base, ["-i", t.file], filter, duration, out);
+      summary = `Voix off ajoutée (${voiceName(v.voiceId)}) à ${fmt(start)} : « ${v.text} ».`;
+    }
+    const data = new Uint8Array(await fs.readFile(out));
+    if (cost > 0) await charge(space, cost, { kind: "retouche", by: r.by, note: `${r.kind === "voix" ? "Voix off" : "Musique"} · ${r.target.title}`.slice(0, 200) });
+
+    let where: string;
+    if (mediaId) {
+      const item = await addVersion(space, mediaId, { fileName: "retouche.mp4", data, by: "ia@hytlabs.com", note: summary.slice(0, 500) });
+      where = `version ${item.versions[item.versions.length - 1].n} dans la médiathèque`;
+    } else {
+      await saveRender(space, r.target.id, data);
+      where = "nouvelle vidéo exportée dans le projet";
+    }
+    await updateRequest(space, id, {
+      status: "livree",
+      message: {
+        by: "ia@hytlabs.com",
+        byName: ASSISTANT,
+        staff: true,
+        text: `C'est fait ! ${summary}\nNouvelle ${where}. Pour essayer d'autres réglages (voix, vitesse, musique…), fais une nouvelle demande depuis la médiathèque.`,
+      },
+    });
+    await setAi(space, id, { state: "terminee", step: "Livrée", progress: 1, finishedAt: Date.now(), delivered: where });
+    await delivered_(space, id, summary, where);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
 }

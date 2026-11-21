@@ -6,6 +6,8 @@ import { useSpace } from "@/components/SpaceProvider";
 import type { ProjectSummary } from "@/lib/history-store";
 import type { MediaItem } from "@/lib/media-store";
 import { cn } from "@/lib/utils";
+import { MUSIC_TRACKS } from "@/lib/video-settings";
+import { DEFAULT_VOICE, MAX_TTS_CHARS } from "@/lib/voices";
 import {
   Download,
   Eye,
@@ -13,8 +15,12 @@ import {
   FileText,
   Film,
   ImageIcon,
+  Bell,
   Loader2,
   MessageSquarePlus,
+  Mic,
+  Play,
+  Square,
   Music2,
   PenLine,
   Search,
@@ -175,24 +181,150 @@ function Modal({ onClose, children, wide }: { onClose: () => void; children: Rea
 
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-function RequestForm({ e, timecode, onDone }: { e: Entry; timecode?: string; onDone: () => void }) {
+type Kind = "visuel" | "musique" | "voix";
+type VoiceOpt = { id: string; name: string; gender: string; hint: string; preview: string | null };
+const KINDS: { id: Kind; label: string; hint: string; Icon: typeof PenLine }[] = [
+  { id: "visuel", label: "Visuel", hint: "textes, logo, couleurs, scènes…", Icon: PenLine },
+  { id: "musique", label: "Musique", hint: "changer seulement la musique", Icon: Music2 },
+  { id: "voix", label: "Voix off", hint: "ajouter une voix qui lit ton texte", Icon: Mic },
+];
+const field =
+  "rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground-dim focus:outline-none focus:border-primary";
+const pill = (on: boolean) =>
+  cn(
+    "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+    on ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/60 hover:text-foreground",
+  );
+const pct = (v: number) => `${Math.round(v * 100)} %`;
+
+/** « 0:52 », « 52 », « 1m05 » → secondes */
+function parseTc(tc: string): number | null {
+  const m = tc.trim().match(/^(\d+)\s*[:m']\s*(\d{1,2})$|^(\d+(?:[.,]\d+)?)\s*s?$/);
+  if (!m) return null;
+  return m[1] ? Number(m[1]) * 60 + Number(m[2]) : Number(m[3].replace(",", "."));
+}
+
+function PlayButton({ src, label = "Écouter" }: { src: string | (() => Promise<string>); label?: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
+  const audio = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => audio.current?.pause(), []);
+  const toggle = async (ev: React.MouseEvent) => {
+    ev.preventDefault();
+    if (state === "playing") {
+      audio.current?.pause();
+      setState("idle");
+      return;
+    }
+    try {
+      setState("loading");
+      const url = typeof src === "string" ? src : await src();
+      audio.current?.pause();
+      const a = new Audio(url);
+      audio.current = a;
+      a.onended = () => setState("idle");
+      await a.play();
+      setState("playing");
+    } catch {
+      setState("idle");
+    }
+  };
+  return (
+    <button type="button" onClick={toggle} className="flex shrink-0 items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs text-foreground hover:bg-secondary/70">
+      {state === "loading" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : state === "playing" ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+      {state === "playing" ? "Stop" : label}
+    </button>
+  );
+}
+
+function RequestForm({ e, timecode, audios, onDone }: { e: Entry; timecode?: string; audios: { id: string; title: string }[]; onDone: () => void }) {
+  const [kind, setKind] = useState<Kind>("visuel");
   const [text, setText] = useState("");
   const [tc, setTc] = useState(timecode ?? "");
+  const [notify, setNotify] = useState(false);
+  const versions = e.kind === "media" ? e.item.versions : [];
+  const [baseVersion, setBaseVersion] = useState<number | undefined>(versions.length ? versions[versions.length - 1].n : undefined);
+  // musique
+  const [source, setSource] = useState<"track" | "media" | "ia">("track");
+  const [track, setTrack] = useState<string>(MUSIC_TRACKS[0].id);
+  const [audioId, setAudioId] = useState(audios[0]?.id ?? "");
+  const [musicPrompt, setMusicPrompt] = useState("");
+  const [mode, setMode] = useState<"remplacer" | "mixer">("remplacer");
+  const [musicVolume, setMusicVolume] = useState(0.7);
+  // voix off
+  const [voices, setVoices] = useState<VoiceOpt[] | null>(null);
+  const [voiceText, setVoiceText] = useState("");
+  const [voiceId, setVoiceId] = useState<string>(DEFAULT_VOICE);
+  const [speed, setSpeed] = useState(1);
+  const [when, setWhen] = useState<"debut" | "fin" | "moment">(timecode ? "moment" : "fin");
+  const [at, setAt] = useState(timecode ?? "");
+  const [duck, setDuck] = useState(true);
+  const [voiceVolume, setVoiceVolume] = useState(1);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const canAudio = e.type === "video";
+
+  useEffect(() => {
+    if (kind !== "voix" || voices) return;
+    fetch("/api/voices")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setVoices)
+      .catch(() => setVoices([]));
+  }, [kind, voices]);
+
+  const listenVoice = async () => {
+    const res = await fetch("/api/voices/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voiceId, text: voiceText, speed }),
+    });
+    if (!res.ok) {
+      setError((await res.json().catch(() => ({}))).error ?? `Erreur ${res.status}`);
+      throw new Error("écoute impossible");
+    }
+    return URL.createObjectURL(await res.blob());
+  };
+
+  const atSeconds = parseTc(at);
+  const valid =
+    kind === "visuel"
+      ? text.trim().length >= 3
+      : kind === "musique"
+        ? source === "track" || (source === "media" && !!audioId) || (source === "ia" && musicPrompt.trim().length >= 3)
+        : voiceText.trim().length >= 2 && (when !== "moment" || atSeconds != null);
+
   const send = async () => {
     setBusy(true);
     setError(null);
     try {
+      const audio =
+        kind === "musique"
+          ? {
+              baseVersion,
+              music: {
+                source,
+                id: track,
+                mediaId: audioId,
+                prompt: musicPrompt,
+                mode,
+                volume: musicVolume,
+              },
+            }
+          : kind === "voix"
+            ? { baseVersion, voice: { text: voiceText, voiceId, speed, start: when === "moment" ? atSeconds : when, duck, volume: voiceVolume } }
+            : undefined;
       const res = await fetch("/api/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           targetType: e.kind === "media" ? "media" : "project",
           targetId: e.kind === "media" ? e.item.id : e.project.id,
+          kind,
           text,
-          timecode: tc,
+          timecode: kind === "visuel" ? tc : undefined,
+          notify,
+          audio,
         }),
       });
       const body = await res.json();
@@ -204,15 +336,15 @@ function RequestForm({ e, timecode, onDone }: { e: Entry; timecode?: string; onD
       setBusy(false);
     }
   };
+
   if (sent) {
     return (
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-foreground">Demande envoyée</h2>
         <p className="text-sm text-muted-foreground">
-          L&apos;IA s&apos;en occupe tout de suite : la nouvelle version arrive dans la médiathèque en quelques minutes et
-          tu es prévenu par email. Suis l&apos;avancement dans{" "}
-          <Link href="/requests" className="text-primary hover:underline">Retouches</Link>. Si l&apos;IA n&apos;y arrive pas,
-          l&apos;équipe HytLabs prend le relais.
+          {kind === "visuel" ? "L'IA s'en occupe tout de suite" : "Le nouveau son est préparé tout de suite"} : la nouvelle version arrive dans
+          la médiathèque en quelques minutes{notify ? " et tu es prévenu par email" : ""}. Suis l&apos;avancement dans{" "}
+          <Link href="/requests" className="text-primary hover:underline">Retouches</Link>. Si ça ne marche pas, l&apos;équipe HytLabs prend le relais.
         </p>
         <button onClick={onDone} className="self-end rounded-lg bg-secondary px-4 py-2 text-sm text-foreground hover:bg-primary hover:text-primary-foreground">
           Fermer
@@ -220,36 +352,226 @@ function RequestForm({ e, timecode, onDone }: { e: Entry; timecode?: string; onD
       </div>
     );
   }
+
   return (
-    <div className="flex flex-col gap-3">
-      <h2 className="pr-8 text-lg font-semibold text-foreground">Demander une retouche</h2>
-      <p className="text-sm text-muted-foreground">« {e.title} »</p>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Ce qu&apos;il faut changer
-        <textarea
-          value={text}
-          onChange={(ev) => setText(ev.target.value)}
-          rows={5}
-          autoFocus
-          placeholder="Ex. : changer le prix en 29 €, mettre notre adresse à la fin, logo plus gros, musique moins forte…"
-          className="rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground-dim focus:outline-none focus:border-primary"
-        />
-      </label>
-      {e.type === "video" && (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="pr-8 text-lg font-semibold text-foreground">Demander une retouche</h2>
+        <p className="text-sm text-muted-foreground">« {e.title} »</p>
+      </div>
+
+      {canAudio && (
+        <div className="grid grid-cols-3 gap-2" role="tablist">
+          {KINDS.map(({ id, label, hint, Icon }) => (
+            <button key={id} role="tab" aria-selected={kind === id} onClick={() => setKind(id)} className={pill(kind === id)}>
+              <span className="flex items-center gap-1.5 font-medium">
+                <Icon className="w-4 h-4" /> {label}
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {kind === "visuel" && (
+        <>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Ce qu&apos;il faut changer à l&apos;image
+            <textarea
+              value={text}
+              onChange={(ev) => setText(ev.target.value)}
+              rows={5}
+              autoFocus
+              placeholder="Ex. : changer le prix en 29 €, mettre notre adresse à la fin, logo plus gros…"
+              className={cn(field, "p-3")}
+            />
+          </label>
+          {e.type === "video" && (
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              À quel moment de la vidéo ? (facultatif)
+              <input value={tc} onChange={(ev) => setTc(ev.target.value)} placeholder="Ex. : 0:52, ou « à la fin »" className={field} />
+            </label>
+          )}
+        </>
+      )}
+
+      {kind === "musique" && (
+        <>
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+            Nouvelle musique
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  ["track", "Musique fournie"],
+                  ["media", "Ma médiathèque"],
+                  ["ia", "Composée par l'IA"],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} onClick={() => setSource(id)} className={pill(source === id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {source === "track" && (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {MUSIC_TRACKS.map((t) => (
+                <div key={t.id} onClick={() => setTrack(t.id)} className={cn(pill(track === t.id), "flex cursor-pointer items-center justify-between gap-2")}>
+                  <span className="min-w-0">
+                    <span className="block font-medium">{t.label}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">{t.hint}</span>
+                  </span>
+                  <PlayButton src={t.src} />
+                </div>
+              ))}
+            </div>
+          )}
+          {source === "media" &&
+            (audios.length ? (
+              <select value={audioId} onChange={(ev) => setAudioId(ev.target.value)} className={field}>
+                {audios.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                Aucun son dans la médiathèque. Envoie d&apos;abord ton fichier (MP3 ou WAV) avec le bouton « Envoyer des fichiers ».
+              </p>
+            ))}
+          {source === "ia" && (
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Décris la musique (style, ambiance, rythme)
+              <textarea
+                value={musicPrompt}
+                onChange={(ev) => setMusicPrompt(ev.target.value)}
+                rows={3}
+                placeholder="Ex. : électro rapide et intense, ambiance course automobile, montée en puissance"
+                className={cn(field, "p-3")}
+              />
+              <span className="text-[11px] text-muted-foreground-dim">Instrumentale, à la durée de la vidéo. Environ 0,04 à 0,07 € débités du crédit.</span>
+            </label>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setMode("remplacer")} className={pill(mode === "remplacer")}>
+              <span className="block font-medium">Remplacer le son</span>
+              <span className="block text-[11px] text-muted-foreground">la vidéo n&apos;aura plus que cette musique</span>
+            </button>
+            <button onClick={() => setMode("mixer")} className={pill(mode === "mixer")}>
+              <span className="block font-medium">Mélanger</span>
+              <span className="block text-[11px] text-muted-foreground">garde le son d&apos;origine (voix, bruitages)</span>
+            </button>
+          </div>
+          <label className="flex items-center gap-3 text-xs text-muted-foreground">
+            Volume de la musique
+            <input type="range" min={0.1} max={1} step={0.05} value={musicVolume} onChange={(ev) => setMusicVolume(Number(ev.target.value))} className="flex-1 accent-[var(--primary)]" />
+            <span className="w-10 text-right text-foreground">{pct(musicVolume)}</span>
+          </label>
+        </>
+      )}
+
+      {kind === "voix" && (
+        <>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            <span className="flex justify-between">
+              Texte lu par la voix <span className={voiceText.length > MAX_TTS_CHARS ? "text-red-400" : ""}>{voiceText.length}/{MAX_TTS_CHARS}</span>
+            </span>
+            <textarea
+              value={voiceText}
+              onChange={(ev) => setVoiceText(ev.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="Ex. : Qualifie-toi chez Elsass SimRacing… et gagne ton baquet en Alpine Cup !"
+              className={cn(field, "p-3")}
+            />
+          </label>
+          <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+            Voix
+            {!voices ? (
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            ) : (
+              <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                {voices.map((v) => (
+                  <div key={v.id} onClick={() => setVoiceId(v.id)} className={cn(pill(voiceId === v.id), "flex cursor-pointer items-center justify-between gap-2 py-1.5")}>
+                    <span className="min-w-0">
+                      <span className="block font-medium">
+                        {v.name} <span className="text-[11px] font-normal text-muted-foreground">{v.gender === "f" ? "femme" : "homme"}</span>
+                      </span>
+                      <span className="block truncate text-[11px] text-muted-foreground">{v.hint}</span>
+                    </span>
+                    {v.preview && <PlayButton src={v.preview} label="Extrait" />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-3 text-xs text-muted-foreground">
+              Vitesse
+              <input type="range" min={0.8} max={1.2} step={0.05} value={speed} onChange={(ev) => setSpeed(Number(ev.target.value))} className="flex-1 accent-[var(--primary)]" />
+              <span className="w-10 text-right text-foreground">×{speed.toFixed(2).replace(".", ",")}</span>
+            </label>
+            <label className="flex items-center gap-3 text-xs text-muted-foreground">
+              Volume
+              <input type="range" min={0.3} max={1.5} step={0.05} value={voiceVolume} onChange={(ev) => setVoiceVolume(Number(ev.target.value))} className="flex-1 accent-[var(--primary)]" />
+              <span className="w-10 text-right text-foreground">{pct(voiceVolume)}</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            Moment
+            <select value={when} onChange={(ev) => setWhen(ev.target.value as typeof when)} className={cn(field, "py-1.5")}>
+              <option value="debut">Au début</option>
+              <option value="fin">À la fin</option>
+              <option value="moment">À un instant précis</option>
+            </select>
+            {when === "moment" && (
+              <input value={at} onChange={(ev) => setAt(ev.target.value)} placeholder="ex. 0:52" className={cn(field, "w-24 py-1.5", at && atSeconds == null && "border-red-400")} />
+            )}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input type="checkbox" checked={duck} onChange={(ev) => setDuck(ev.target.checked)} className="accent-[var(--primary)]" />
+            Baisser la musique d&apos;origine pendant la voix
+          </label>
+          {voiceText.trim().length >= 2 && voiceText.length <= MAX_TTS_CHARS && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground-dim">
+              <PlayButton key={`${voiceId}|${speed}|${voiceText}`} src={listenVoice} label="Écouter mon texte" />
+              quelques centimes, pas repayés à l&apos;envoi de la demande
+            </div>
+          )}
+        </>
+      )}
+
+      {kind !== "visuel" && versions.length > 1 && (
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          À quel moment de la vidéo ? (facultatif)
-          <input
-            value={tc}
-            onChange={(ev) => setTc(ev.target.value)}
-            placeholder="Ex. : 0:52, ou « à la fin »"
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground-dim focus:outline-none focus:border-primary"
-          />
+          Partir de la version
+          <select value={baseVersion} onChange={(ev) => setBaseVersion(Number(ev.target.value))} className={field}>
+            {[...versions].reverse().map((v, i) => (
+              <option key={v.n} value={v.n}>
+                Version {v.n}
+                {i === 0 ? " (la dernière)" : ""}
+                {v.n === 1 ? " (l'originale)" : ""}
+                {v.note ? ` · ${v.note.slice(0, 50)}` : ""}
+              </option>
+            ))}
+          </select>
         </label>
       )}
+      {kind !== "visuel" && (
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Précision pour l&apos;équipe (facultatif)
+          <input value={text} onChange={(ev) => setText(ev.target.value)} className={field} />
+        </label>
+      )}
+
+      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+        <input type="checkbox" checked={notify} onChange={(ev) => setNotify(ev.target.checked)} className="accent-[var(--primary)]" />
+        <Bell className="w-4 h-4" /> Me prévenir par email quand c&apos;est prêt
+      </label>
       {error && <p className="text-sm text-red-400">{error}</p>}
       <button
         onClick={send}
-        disabled={busy || text.trim().length < 3}
+        disabled={busy || !valid}
         className="flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
       >
         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquarePlus className="w-4 h-4" />} Envoyer la demande
@@ -629,7 +951,11 @@ function MediaLibrary() {
       )}
       {requesting && (
         <Modal onClose={() => setRequesting(null)}>
-          <RequestForm e={requesting.e} timecode={requesting.tc} onDone={() => { setRequesting(null); setViewing(null); }} />
+          <RequestForm
+            e={requesting.e}
+            timecode={requesting.tc}
+            audios={entries.flatMap((x) => (x.kind === "media" && x.type === "audio" ? [{ id: x.item.id, title: x.title }] : []))}
+            onDone={() => { setRequesting(null); setViewing(null); }} />
         </Modal>
       )}
     </main>

@@ -35,3 +35,8 @@ Remotion « Prompt to Motion Graphics » adapté à Claude. Interface en frança
   Un MP4 livré sans code devient un projet `rt-<média>` dont le fichier d'origine est la globale `SOURCE`
   (`src/remotion/source-media.ts`) ; les retouches s'empilent par-dessus. `// IMPOSSIBLE:` ou un rendu raté
   → la demande reste ouverte pour l'équipe. Client prévenu par email (route REST signée du mu-plugin WordPress).
+- Types de retouche (`kind`) : `visuel` (IA + rendu, ci-dessus), `musique` et `voix` (sans IA de code : ffmpeg
+  remplace ou mélange la bande son, image copiée). Musique : pistes fournies, son de la médiathèque ou Lyria
+  (OpenRouter) ; voix off : ElevenLabs (`ELEVENLABS_API_KEY`, voix choisies dans `src/lib/voices.ts`, cache
+  DATA_DIR/tts-cache partagé avec l'écoute `/api/voices/preview`). Code : `src/lib/audio-ai.ts`, `handleAudio`.
+- Emails au client seulement si `notify` est coché sur la demande (non par défaut, modifiable sur /requests).
