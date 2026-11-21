@@ -17,7 +17,12 @@ export async function fileResponse(
     "Content-Type": contentType,
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=86400",
+    "X-Content-Type-Options": "nosniff",
   };
+  // un SVG ouvert directement ne doit jamais pouvoir exécuter de script sur le domaine du studio
+  if (contentType === "image/svg+xml") headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
+  // tout ce qui n'est ni média ni PDF est seulement téléchargé
+  if (!downloadName && !/^(video|image|audio)\/|^application\/pdf$|^font\//.test(contentType)) downloadName = "fichier";
   if (downloadName) {
     headers["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`;
   }

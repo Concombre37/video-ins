@@ -13,7 +13,7 @@ import type { SpaceId } from "./spaces";
  * Les vidéos créées dans le studio restent dans les projets (history-store) ; la page Médiathèque
  * affiche les deux.
  */
-export type MediaKind = "video" | "image" | "audio";
+export type MediaKind = "video" | "image" | "audio" | "document" | "font" | "fichier";
 
 export interface MediaVersion {
   n: number;
@@ -37,6 +37,8 @@ export interface MediaItem {
   updatedAt: number;
   versions: MediaVersion[];
   hasPoster: boolean;
+  /** copie légère (MP4 H.264 1080p) pour lire dans le navigateur les originaux lourds (4K, HEVC…) */
+  hasPreview?: boolean;
 }
 
 const EXT: Record<string, { kind: MediaKind; type: string }> = {
@@ -49,6 +51,15 @@ const EXT: Record<string, { kind: MediaKind; type: string }> = {
   webp: { kind: "image", type: "image/webp" },
   mp3: { kind: "audio", type: "audio/mpeg" },
   wav: { kind: "audio", type: "audio/wav" },
+  svg: { kind: "image", type: "image/svg+xml" },
+  pdf: { kind: "document", type: "application/pdf" },
+  ttf: { kind: "font", type: "font/ttf" },
+  otf: { kind: "font", type: "font/otf" },
+  woff: { kind: "font", type: "font/woff" },
+  woff2: { kind: "font", type: "font/woff2" },
+  ai: { kind: "fichier", type: "application/postscript" },
+  eps: { kind: "fichier", type: "application/postscript" },
+  zip: { kind: "fichier", type: "application/zip" },
 };
 
 export const MAX_UPLOAD = 400 * 1024 * 1024;
@@ -85,7 +96,7 @@ export async function createMedia(
 ): Promise<MediaItem> {
   const ext = extOf(input.fileName);
   const t = typeOfExt(ext);
-  if (!t) throw new Error("Type de fichier non accepté (vidéo MP4/WebM/MOV, image JPG/PNG/WebP, son MP3/WAV)");
+  if (!t) throw new Error("Type de fichier non accepté (vidéo, image, son, PDF, police, AI/EPS, ZIP)");
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   await fs.mkdir(dir(space, id), { recursive: true });
   const file = `v1.${ext}`;
@@ -150,6 +161,10 @@ export function mediaFilePath(space: SpaceId, item: MediaItem, n?: number) {
   const v = n ? item.versions.find((x) => x.n === n) : item.versions[item.versions.length - 1];
   if (!v || !FILE_RE.test(v.file)) return null;
   return { path: path.join(dir(space, item.id), v.file), version: v, type: typeOfExt(extOf(v.file))?.type ?? "application/octet-stream" };
+}
+
+export function previewPath(space: SpaceId, id: string) {
+  return ID_RE.test(id) ? path.join(dir(space, id), "preview.mp4") : null;
 }
 
 export function posterPath(space: SpaceId, id: string) {

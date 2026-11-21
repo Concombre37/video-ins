@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { signSession } from "./auth";
 import { getProject, listRenders, renderPath, saveProject, saveRender, type Project, type ProjectSource } from "./history-store";
-import { addVersion, getMedia, mediaFilePath } from "./media-store";
+import { addVersion, getMedia, mediaFilePath, previewPath } from "./media-store";
 import { notifyClient, notifyStaff } from "./notify";
 import { getRequest, listRequests, setAi, updateRequest, type RetouchRequest } from "./requests-store";
 import { SPACE_IDS, SPACES, type SpaceId } from "./spaces";
@@ -110,20 +110,32 @@ export const MyAnimation = () => {
 async function projectForMedia(space: SpaceId, mediaId: string) {
   const item = await getMedia(space, mediaId);
   if (!item) throw new Error("Média introuvable");
-  if (item.kind === "audio") throw new Impossible("la retouche automatique ne gère pas les fichiers son");
+  if (item.kind !== "video" && item.kind !== "image") {
+    throw new Impossible("la retouche automatique ne gère que les vidéos et les visuels");
+  }
+  const kind: "video" | "image" = item.kind;
   const original = mediaFilePath(space, item, item.versions[0].n)!;
   const current = mediaFilePath(space, item)!;
+  // originaux lourds (4K, HEVC) : on travaille sur la copie légère 1080p
+  const preview = item.hasPreview ? previewPath(space, item.id) : null;
+  if (preview && item.versions.length === 1) {
+    original.path = preview;
+    current.path = preview;
+  }
   const id = `rt-${item.id}`.slice(0, 64);
   let project = await getProject(space, id);
   if (!project?.source) {
     const p = await probe(original.path);
     const fps = item.kind === "image" ? 30 : p.duration * Math.min(60, Math.round(p.fps)) > 2400 ? 30 : Math.min(60, Math.round(p.fps)) || 30;
+    // composition plafonnée à 1920 px sur le grand côté (rendu raisonnable dans le LXC)
+    const k = Math.min(1, 1920 / Math.max(p.width, p.height));
+    const even = (n: number) => Math.max(2, Math.round((n * k) / 2) * 2);
     const source: ProjectSource = {
       mediaId: item.id,
       version: item.versions[0].n,
-      type: item.kind,
-      width: p.width,
-      height: p.height,
+      type: kind,
+      width: even(p.width),
+      height: even(p.height),
       durationInSeconds: item.kind === "image" ? 0 : p.duration,
     };
     const now = Date.now();
@@ -132,7 +144,7 @@ async function projectForMedia(space: SpaceId, mediaId: string) {
       title: `Retouches · ${item.title}`,
       createdAt: now,
       updatedAt: now,
-      code: BASE_CODE[item.kind],
+      code: BASE_CODE[kind],
       fps,
       durationInFrames: item.kind === "image" ? 1 : Math.max(1, Math.round(p.duration * fps)),
       messages: [],

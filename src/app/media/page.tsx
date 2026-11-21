@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 import {
   Download,
   Eye,
+  FileArchive,
+  FileText,
   Film,
   ImageIcon,
   Loader2,
@@ -18,6 +20,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  Type as TypeIcon,
   Upload,
   UploadCloud,
   X,
@@ -34,17 +37,60 @@ type Entry =
   | { kind: "media"; key: string; title: string; type: MediaItem["kind"]; date: number; item: MediaItem }
   | { kind: "studio"; key: string; title: string; type: "video"; date: number; project: ProjectSummary };
 
-type Filter = "all" | "video" | "image" | "audio" | "studio";
+type Filter = "all" | "video" | "image" | "audio" | "docs" | "studio";
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "Tout" },
   { id: "video", label: "Vidéos" },
   { id: "image", label: "Visuels" },
   { id: "audio", label: "Sons" },
+  { id: "docs", label: "Documents et polices" },
   { id: "studio", label: "Créées dans le studio" },
 ];
 
+const isDoc = (t: Entry["type"]) => t === "document" || t === "font" || t === "fichier";
+const extOfEntry = (e: Entry) =>
+  e.kind === "media" ? e.item.versions[e.item.versions.length - 1].file.split(".").pop()?.toUpperCase() ?? "" : "MP4";
+
+/** Police d'un média chargée dans la page pour l'aperçu */
+function useMediaFont(e: Entry) {
+  const [family, setFamily] = useState<string | null>(null);
+  useEffect(() => {
+    if (e.type !== "font" || e.kind !== "media") return;
+    const name = `media-${e.item.id}`;
+    const face = new FontFace(name, `url(/api/media/${e.item.id}/file)`);
+    face
+      .load()
+      .then((f) => {
+        document.fonts.add(f);
+        setFamily(name);
+      })
+      .catch(() => undefined);
+  }, [e]);
+  return family;
+}
+
+function DocTile({ e, className, big }: { e: Entry; className?: string; big?: boolean }) {
+  const family = useMediaFont(e);
+  const Icon = e.type === "document" ? FileText : e.type === "font" ? TypeIcon : FileArchive;
+  return (
+    <div className={cn("flex h-full w-full flex-col items-center justify-center gap-3 p-4 text-center", className)}>
+      {family ? (
+        <span style={{ fontFamily: family }} className={cn("leading-tight text-foreground", big ? "text-6xl" : "text-4xl")}>
+          Aa Bb 123
+          {big && <span className="mt-4 block text-2xl">Le pilote franchit la ligne en tête</span>}
+        </span>
+      ) : (
+        <Icon className={cn("text-primary", big ? "w-20 h-20" : "w-12 h-12")} />
+      )}
+      <span className="rounded bg-secondary px-2 py-0.5 text-xs font-semibold text-muted-foreground">{extOfEntry(e)}</span>
+    </div>
+  );
+}
+
 const fileUrl = (e: Entry, opts: { v?: number; download?: boolean } = {}) => {
   if (e.kind === "media") {
+    // lecture : copie légère si l'original est trop lourd pour le navigateur
+    if (!opts.v && !opts.download && e.item.hasPreview) return `/api/media/${e.item.id}/file?preview`;
     const q = new URLSearchParams();
     if (opts.v) q.set("v", String(opts.v));
     if (opts.download) q.set("download", "");
@@ -77,6 +123,7 @@ function upload(url: string, form: FormData, onProgress: (p: number) => void) {
 }
 
 function Preview({ e, className }: { e: Entry; className?: string }) {
+  if (isDoc(e.type)) return <DocTile e={e} className={className} />;
   if (e.type === "image") return <img src={fileUrl(e)} alt="" loading="lazy" className={cn("object-contain", className)} />;
   if (e.type === "audio") {
     return (
@@ -241,7 +288,11 @@ function Viewer({ e, admin, onRequest, onChanged }: { e: Entry; admin: boolean; 
   return (
     <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_300px]">
       <div className="flex max-h-[80vh] items-center justify-center rounded-xl bg-black">
-        {e.type === "image" ? (
+        {e.type === "document" ? (
+          <iframe src={src} title={e.title} className="h-[80vh] w-full rounded-xl bg-white" />
+        ) : isDoc(e.type) ? (
+          <DocTile e={e} big className="min-h-[50vh]" />
+        ) : e.type === "image" ? (
           <img src={src} alt="" className="max-h-[80vh] max-w-full object-contain" />
         ) : e.type === "audio" ? (
           <audio key={src} src={src} controls autoPlay className="w-full p-6" />
@@ -374,7 +425,7 @@ function MediaLibrary() {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return entries.filter((e) => {
-      if (filter === "studio" ? e.kind !== "studio" : filter !== "all" && e.type !== filter) return false;
+      if (filter === "studio" ? e.kind !== "studio" : filter === "docs" ? !isDoc(e.type) : filter !== "all" && e.type !== filter) return false;
       if (category && (e.kind !== "media" || e.item.category !== category)) return false;
       return !q || e.title.toLowerCase().includes(q);
     });
@@ -438,7 +489,7 @@ function MediaLibrary() {
           </div>
           <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover">
             <UploadCloud className="w-4 h-4" /> Ajouter des fichiers
-            <input type="file" multiple accept="video/*,image/*,audio/*" className="hidden" onChange={(ev) => ev.target.files && sendFiles(ev.target.files)} />
+            <input type="file" multiple accept="video/*,image/*,audio/*,.pdf,.ttf,.otf,.woff,.woff2,.ai,.eps,.zip" className="hidden" onChange={(ev) => ev.target.files && sendFiles(ev.target.files)} />
           </label>
         </div>
 
@@ -513,14 +564,14 @@ function MediaLibrary() {
         <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(230px,1fr))]">
           {shown.map((e) => {
             const versions = e.kind === "media" ? e.item.versions.length : 1;
-            const Icon = e.type === "image" ? ImageIcon : e.type === "audio" ? Music2 : Film;
+            const Icon = e.type === "image" ? ImageIcon : e.type === "audio" ? Music2 : isDoc(e.type) ? FileText : Film;
             return (
               <article key={e.key} className="group flex flex-col overflow-hidden rounded-xl border border-border bg-background-elevated">
                 <button onClick={() => setViewing(e)} className="relative flex h-[260px] items-center justify-center bg-black/40" title="Voir">
                   <Preview e={e} className="max-h-full max-w-full" />
                   <span className="absolute left-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                     <Icon className="w-3 h-3" />
-                    {e.kind === "studio" ? "Studio" : e.item.format ?? (e.type === "image" ? "Visuel" : e.type === "audio" ? "Son" : "Vidéo")}
+                    {e.kind === "studio" ? "Studio" : e.item.format ?? ({ image: "Visuel", audio: "Son", video: "Vidéo", document: "PDF", font: "Police", fichier: "Fichier" } as const)[e.type]}
                   </span>
                   {versions > 1 && (
                     <span className="absolute right-2 top-2 rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">v{versions}</span>
