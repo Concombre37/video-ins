@@ -25,6 +25,18 @@ export interface RequestMessage {
   text: string;
 }
 
+/** Suivi de la retouche automatique (IA + rendu serveur) */
+export interface AiJob {
+  state: "en_attente" | "en_cours" | "terminee" | "echec";
+  step?: string;
+  progress?: number;
+  error?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  /** version de média ou fichier de rendu livré */
+  delivered?: string;
+}
+
 export interface RetouchRequest {
   id: string;
   target: { type: "media" | "project"; id: string; title: string };
@@ -36,6 +48,9 @@ export interface RetouchRequest {
   by: string;
   byName: string;
   messages: RequestMessage[];
+  ai?: AiJob;
+  /** le client a du nouveau à lire (réponse ou livraison) */
+  clientUnread?: boolean;
 }
 
 const file = (space: SpaceId) => path.join(spaceDir(space), "requests.json");
@@ -69,6 +84,32 @@ export async function createRequest(
   });
 }
 
+export async function getRequest(space: SpaceId, id: string) {
+  return (await readJson<RetouchRequest[]>(file(space), [])).find((r) => r.id === id) ?? null;
+}
+
+/** Met à jour le suivi IA (fusion des champs). */
+export async function setAi(space: SpaceId, id: string, ai: Partial<AiJob>) {
+  return withLock(file(space), async () => {
+    const list = await readJson<RetouchRequest[]>(file(space), []);
+    const r = list.find((x) => x.id === id);
+    if (!r) return null;
+    r.ai = { ...(r.ai ?? { state: "en_attente" }), ...ai };
+    await writeJson(file(space), list);
+    return r;
+  });
+}
+
+/** Le client a ouvert la page Retouches : plus rien de non lu. */
+export async function markSeen(space: SpaceId) {
+  return withLock(file(space), async () => {
+    const list = await readJson<RetouchRequest[]>(file(space), []);
+    if (!list.some((r) => r.clientUnread)) return;
+    for (const r of list) r.clientUnread = false;
+    await writeJson(file(space), list);
+  });
+}
+
 export async function updateRequest(
   space: SpaceId,
   id: string,
@@ -83,6 +124,7 @@ export async function updateRequest(
       r.messages.push({ ...patch.message, text: patch.message.text.slice(0, 4000), at: Date.now() });
       // un client qui relance une demande livrée la rouvre
       if (!patch.message.staff && (r.status === "livree" || r.status === "fermee") && !patch.status) r.status = "nouvelle";
+      if (patch.message.staff) r.clientUnread = true;
     }
     r.updatedAt = Date.now();
     await writeJson(file(space), list);

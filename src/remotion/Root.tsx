@@ -22,8 +22,9 @@ export const RemotionRoot: React.FC = () => {
           return {
             durationInFrames: props.durationInFrames as number,
             fps: props.fps as number,
-            width: FORMATS[format].width,
-            height: FORMATS[format].height,
+            // dimensions exactes du média d'origine pour une retouche (ex. visuel 4:5)
+            width: Number(props.width) || FORMATS[format].width,
+            height: Number(props.height) || FORMATS[format].height,
           };
         }}
       />

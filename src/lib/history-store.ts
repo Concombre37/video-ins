@@ -57,6 +57,18 @@ export interface Project {
   volume: number;
   /** Coût total des générations du projet (USD) */
   totalCost: number;
+  /** Projet de retouche d'un média de la médiathèque : le média d'origine sert de fond (globale SOURCE) */
+  source?: ProjectSource;
+}
+
+export interface ProjectSource {
+  mediaId: string;
+  /** version du média servant de base (toujours l'originale : les retouches s'empilent dans le code) */
+  version: number;
+  type: "video" | "image";
+  width: number;
+  height: number;
+  durationInSeconds: number;
 }
 
 export interface RenderInfo {
@@ -65,7 +77,8 @@ export interface RenderInfo {
   createdAt: number;
 }
 
-export type ProjectSummary = Omit<Project, "code" | "messages" | "productImages" | "music"> & {
+export type ProjectSummary = Omit<Project, "code" | "messages" | "productImages" | "music" | "source"> & {
+  sourceMediaId?: string;
   prompts: number;
   renders: RenderInfo[];
   musicLabel: string;
@@ -75,7 +88,7 @@ export async function saveProject(space: SpaceId, p: Project) {
   if (!isValidId(p.id)) throw new Error("Identifiant invalide");
   await fs.mkdir(PROJECTS(space), { recursive: true });
   const existing = await getProject(space, p.id);
-  const merged: Project = { ...p, createdAt: existing?.createdAt ?? p.createdAt };
+  const merged: Project = { ...p, createdAt: existing?.createdAt ?? p.createdAt, source: p.source ?? existing?.source };
   const target = path.join(PROJECTS(space), `${p.id}.json`);
   await fs.writeFile(`${target}.tmp`, JSON.stringify(merged));
   await fs.rename(`${target}.tmp`, target);
@@ -141,6 +154,7 @@ export async function listProjects(space: SpaceId): Promise<ProjectSummary[]> {
       prompts: p.messages.filter((m) => m.role === "user").length,
       renders: await listRenders(space, p.id),
       musicLabel: musicLabel(p.music),
+      sourceMediaId: p.source?.mediaId,
     });
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt);

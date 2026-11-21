@@ -29,3 +29,9 @@ Remotion « Prompt to Motion Graphics » adapté à Claude. Interface en frança
 - Médiathèque (`src/lib/media-store.ts`, page `/media`) avec versions ; retouches (`src/lib/requests-store.ts`,
   page `/requests`) ; crédit en euros par espace (`src/lib/budget-store.ts`, page `/admin`), débité du coût réel
   de chaque génération ou retouche IA (USD_EUR).
+- Retouche automatique (`src/lib/auto-retouch.ts`) : chaque demande (ou réponse du client) part à l'IA (OpenRouter,
+  `AUTO_RETOUCH_MODEL`, Haiku par défaut) avec des images de la version actuelle, puis rendu serveur
+  (`scripts/render-job.mjs`, ffmpeg requis) et livraison : nouvelle version du média ou nouveau rendu du projet.
+  Un MP4 livré sans code devient un projet `rt-<média>` dont le fichier d'origine est la globale `SOURCE`
+  (`src/remotion/source-media.ts`) ; les retouches s'empilent par-dessus. `// IMPOSSIBLE:` ou un rendu raté
+  → la demande reste ouverte pour l'équipe. Client prévenu par email (route REST signée du mu-plugin WordPress).

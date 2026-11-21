@@ -4,7 +4,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { useSpace } from "@/components/SpaceProvider";
 import type { RequestStatus, RetouchRequest } from "@/lib/requests-store";
 import { cn } from "@/lib/utils";
-import { Clock, Download, Film, Loader2, MessageSquareText, Send, Upload } from "lucide-react";
+import { Bot, Clock, Download, Film, Loader2, MessageSquareText, RotateCcw, Send, Upload } from "lucide-react";
 import type { NextPage } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,7 +23,7 @@ function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolea
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
-  const patch = async (body: { status?: RequestStatus; text?: string }) => {
+  const patch = async (body: { status?: RequestStatus; text?: string; retry?: boolean }) => {
     setBusy(true);
     setError(null);
     try {
@@ -111,6 +111,43 @@ function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolea
         </div>
       </div>
 
+      {r.ai && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs",
+            r.ai.state === "echec" ? "border-amber-500/40 bg-amber-500/10" : "border-primary/40 bg-primary/10",
+          )}
+        >
+          {r.ai.state === "en_cours" || r.ai.state === "en_attente" ? (
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          ) : (
+            <Bot className="w-4 h-4 text-primary" />
+          )}
+          <span className="text-foreground">
+            Retouche automatique :{" "}
+            {r.ai.state === "en_attente" && "en file d'attente"}
+            {r.ai.state === "en_cours" && `${r.ai.step ?? "en cours"}${r.ai.progress ? ` · ${Math.round(r.ai.progress * 100)} %` : ""}`}
+            {r.ai.state === "terminee" && `livrée (${r.ai.delivered ?? "nouvelle version"})`}
+            {r.ai.state === "echec" && "pas aboutie, l'équipe HytLabs reprend la main"}
+          </span>
+          {(r.ai.state === "en_cours" || r.ai.state === "en_attente") && r.ai.progress != null && r.ai.progress > 0 && (
+            <span className="h-1.5 w-32 overflow-hidden rounded-full bg-secondary">
+              <span className="block h-full bg-primary" style={{ width: `${r.ai.progress * 100}%` }} />
+            </span>
+          )}
+          {admin && r.ai.error && <span className="w-full text-muted-foreground">Détail : {r.ai.error}</span>}
+          {admin && (r.ai.state === "echec" || r.ai.state === "terminee") && (
+            <button
+              onClick={() => patch({ retry: true })}
+              disabled={busy}
+              className="ml-auto flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-foreground hover:bg-secondary/70"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Relancer l&apos;IA
+            </button>
+          )}
+        </div>
+      )}
+
       <ol className="flex flex-col gap-2">
         {r.messages.map((m, i) => (
           <li key={i} className={cn("max-w-[85%] rounded-xl px-3 py-2 text-sm", m.staff ? "self-start bg-primary/10" : "self-end bg-secondary")}>
@@ -128,7 +165,7 @@ function RequestCard({ r, admin, onChanged }: { r: RetouchRequest; admin: boolea
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={2}
-            placeholder={admin ? "Réponse au client (ou note jointe à la version livrée)" : "Ajouter une précision…"}
+            placeholder={admin ? "Réponse au client (ou note jointe à la version livrée)" : "Pas tout à fait ça ? Précise ici, l'IA relance la retouche…"}
             className="min-w-0 flex-1 rounded-lg border border-border bg-background p-2 text-sm text-foreground placeholder:text-muted-foreground-dim focus:outline-none focus:border-primary"
           />
           <button
@@ -202,10 +239,20 @@ function Requests() {
   }, []);
   useEffect(() => {
     load();
-  }, [load]);
+    // le client a vu ses retouches : la pastille du menu s'efface
+    if (!me.user.admin) fetch("/api/requests/seen", { method: "POST" }).catch(() => undefined);
+  }, [load, me.user.admin]);
+
+  // tant qu'une retouche automatique tourne, on rafraîchit
+  const working = (list ?? []).some((r) => r.ai && (r.ai.state === "en_attente" || r.ai.state === "en_cours"));
+  useEffect(() => {
+    if (!working) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [working, load]);
 
   const shown = useMemo(
-    () => (list ?? []).filter((r) => showClosed || (r.status !== "fermee" && r.status !== "livree")),
+    () => (list ?? []).filter((r) => showClosed || r.status !== "fermee"),
     [list, showClosed],
   );
   const hidden = (list?.length ?? 0) - shown.length;
@@ -224,7 +271,7 @@ function Requests() {
         {(list?.length ?? 0) > 0 && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} className="accent-[var(--primary)]" />
-            Afficher aussi les demandes livrées et fermées{hidden > 0 && !showClosed ? ` (${hidden})` : ""}
+            Afficher aussi les demandes fermées{hidden > 0 && !showClosed ? ` (${hidden})` : ""}
           </label>
         )}
         {me.user.admin && <OtherSpaces />}

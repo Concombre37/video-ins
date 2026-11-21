@@ -6,6 +6,8 @@ import { Loader2 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 export interface Me {
+  /** pastille du menu Retouches */
+  badge: number;
   user: { name: string; email: string; admin: boolean };
   space: SpaceId;
   spaces: SpaceInfo[];

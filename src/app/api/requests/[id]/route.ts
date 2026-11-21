@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireContext } from "@/lib/auth";
+import { enqueueRetouch } from "@/lib/auto-retouch";
 import { notifyStaff } from "@/lib/notify";
 import { STATUS_LABEL, updateRequest, type RequestStatus } from "@/lib/requests-store";
 import { SPACES } from "@/lib/spaces";
@@ -19,6 +20,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     message: text ? { by: ctx.session.email, byName: ctx.session.name, staff: ctx.session.admin, text } : undefined,
   });
   if (!r) return NextResponse.json({ error: "Demande introuvable" }, { status: 404 });
+  // le client précise ou relance : nouvelle retouche automatique ; l'équipe peut aussi la relancer ({ retry: true })
+  if ((text && !ctx.session.admin) || (ctx.session.admin && b.retry === true)) {
+    await enqueueRetouch(ctx.space, r.id);
+  }
   if (text && !ctx.session.admin) {
     await notifyStaff(`💬 ${ctx.session.name} (${SPACES[ctx.space].name}) a répondu sur « ${r.target.title} » :\n${text}`);
   }

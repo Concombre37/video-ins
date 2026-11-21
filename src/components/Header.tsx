@@ -16,7 +16,7 @@ export function Header() {
     { href: "/", label: "Nouvelle vidéo", icon: Plus },
     { href: "/media", label: "Médiathèque", icon: Images },
     { href: "/history", label: "Projets", icon: History },
-    { href: "/requests", label: "Retouches", icon: MessageSquareText },
+    { href: "/requests", label: "Retouches", icon: MessageSquareText, badge: me.badge },
     ...(me.user.admin ? [{ href: "/admin", label: "Admin", icon: Shield }] : []),
   ];
   return (
@@ -58,7 +58,14 @@ export function Header() {
                   : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
               )}
             >
-              <item.icon className="w-4 h-4" />
+              <span className="relative">
+                <item.icon className="w-4 h-4" />
+                {"badge" in item && item.badge ? (
+                  <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-4 text-white">
+                    {item.badge}
+                  </span>
+                ) : null}
+              </span>
               <span className="hidden lg:inline">{item.label}</span>
             </Link>
           );

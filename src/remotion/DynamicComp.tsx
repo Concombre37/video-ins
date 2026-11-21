@@ -3,8 +3,14 @@ import {
   AbsoluteFill,
   continueRender,
   delayRender,
+  cancelRender,
   getInputProps,
+  getRemotionEnvironment,
+  staticFile,
 } from "remotion";
+import { setActiveBrand } from "./active-brand";
+import { isSpaceId } from "../lib/spaces";
+import { setSource, type SourceMedia } from "./source-media";
 import { compileCode } from "./compiler";
 import { setProductImages } from "./product-images";
 import { withMusic } from "./with-music";
@@ -15,11 +21,17 @@ interface DynamicCompProps {
 }
 
 export const DynamicComp: React.FC = () => {
-  const { code, productImages, musicSrc, musicVolume } = getInputProps() as DynamicCompProps & {
+  const { code, productImages, musicSrc, musicVolume, space, source } = getInputProps() as DynamicCompProps & {
     productImages?: string[];
     musicSrc?: string | null;
     musicVolume?: number;
+    space?: string;
+    /** rendu serveur d'une retouche : fichier d'origine copié dans le dossier public du rendu */
+    source?: (Omit<SourceMedia, "src"> & { file: string }) | null;
   };
+  // Rendu serveur : identité de l'espace et média d'origine
+  if (isSpaceId(space)) setActiveBrand(space);
+  if (source?.file) setSource({ ...source, src: staticFile(source.file) });
   // Rendu CLI / Lambda : les photos produits arrivent via les props
   if (Array.isArray(productImages) && productImages.length > 0) {
     setProductImages(productImages);
@@ -34,6 +46,8 @@ export const DynamicComp: React.FC = () => {
       const result = compileCode(code);
 
       if (result.error) {
+        // rendu serveur : échouer franchement plutôt que de livrer une vidéo d'erreur
+        if (getRemotionEnvironment().isRendering) cancelRender(new Error(`Compilation : ${result.error}`));
         setError(result.error);
       } else {
         const Comp = result.Component;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireContext } from "@/lib/auth";
 import { getProject } from "@/lib/history-store";
 import { getMedia } from "@/lib/media-store";
+import { enqueueRetouch } from "@/lib/auto-retouch";
 import { notifyStaff } from "@/lib/notify";
 import { createRequest, listRequests } from "@/lib/requests-store";
 import { SPACES } from "@/lib/spaces";
@@ -33,6 +34,8 @@ export async function POST(req: Request) {
     byName: ctx.session.name,
     staff: ctx.session.admin,
   });
+  // retouche automatique (IA + rendu) lancée tout de suite
+  await enqueueRetouch(ctx.space, r.id);
   if (!ctx.session.admin) {
     await notifyStaff(
       `🎬 Nouvelle demande de retouche (${SPACES[ctx.space].name}) par ${ctx.session.name}\n« ${title} »${r.timecode ? ` à ${r.timecode}` : ""}\n${text}\nhttps://video.hytlabs.com/requests`,

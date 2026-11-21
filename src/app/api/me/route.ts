@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireContext, SPACE_COOKIE } from "@/lib/auth";
 import { getBudget, remaining } from "@/lib/budget-store";
+import { listRequests } from "@/lib/requests-store";
 import { isSpaceId, SPACES } from "@/lib/spaces";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,13 @@ export async function GET() {
   const ctx = await requireContext();
   if (ctx instanceof Response) return ctx;
   const b = SPACES[ctx.space].hasCredit ? await getBudget(ctx.space) : null;
+  const requests = await listRequests(ctx.space);
+  // pastille du menu Retouches : nouveautés pour le client, demandes ouvertes pour l'équipe
+  const badge = ctx.session.admin
+    ? requests.filter((r) => r.status === "nouvelle").length
+    : requests.filter((r) => r.clientUnread).length;
   return NextResponse.json({
+    badge,
     user: { name: ctx.session.name, email: ctx.session.email, admin: ctx.session.admin },
     space: ctx.space,
     spaces: ctx.spaces.map((id) => SPACES[id]),

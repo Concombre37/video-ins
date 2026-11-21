@@ -162,8 +162,10 @@ function RequestForm({ e, timecode, onDone }: { e: Entry; timecode?: string; onD
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-foreground">Demande envoyée</h2>
         <p className="text-sm text-muted-foreground">
-          L&apos;équipe HytLabs s&apos;en occupe. Tu suivras l&apos;avancement et la nouvelle version dans{" "}
-          <Link href="/requests" className="text-primary hover:underline">Retouches</Link>.
+          L&apos;IA s&apos;en occupe tout de suite : la nouvelle version arrive dans la médiathèque en quelques minutes et
+          tu es prévenu par email. Suis l&apos;avancement dans{" "}
+          <Link href="/requests" className="text-primary hover:underline">Retouches</Link>. Si l&apos;IA n&apos;y arrive pas,
+          l&apos;équipe HytLabs prend le relais.
         </p>
         <button onClick={onDone} className="self-end rounded-lg bg-secondary px-4 py-2 text-sm text-foreground hover:bg-primary hover:text-primary-foreground">
           Fermer
@@ -358,7 +360,8 @@ function MediaLibrary() {
   const entries = useMemo<Entry[]>(() => {
     const list: Entry[] = (media ?? []).map((item) => ({ kind: "media", key: `m-${item.id}`, title: item.title, type: item.kind, date: item.updatedAt, item }));
     for (const p of projects) {
-      if (p.renders.length) list.push({ kind: "studio", key: `p-${p.id}`, title: p.title, type: "video", date: p.renders[0].createdAt, project: p });
+      // les projets de retouche d'un média sont déjà livrés comme versions de ce média
+      if (p.renders.length && !p.sourceMediaId) list.push({ kind: "studio", key: `p-${p.id}`, title: p.title, type: "video", date: p.renders[0].createdAt, project: p });
     }
     return list.sort((a, b) => b.date - a.date);
   }, [media, projects]);

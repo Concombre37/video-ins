@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AbsoluteFill,
   Img,
+  OffthreadVideo,
   Sequence,
   interpolate,
   spring,
@@ -25,6 +26,7 @@ import {
 import * as THREE from "three";
 import { PRODUCT_IMAGES, exposeProductImages } from "./product-images";
 import { getActiveBrand } from "./active-brand";
+import { SOURCE } from "./source-media";
 
 exposeProductImages();
 
@@ -107,6 +109,7 @@ export function compileCode(code: string): CompilationResult {
       spring,
       Sequence,
       Img,
+      OffthreadVideo,
     };
 
     const wrappedCode = `${transpiled.code}\nreturn DynamicAnimation;`;
@@ -156,6 +159,8 @@ export function compileCode(code: string): CompilationResult {
       "clockWipe",
       "PRODUCT_IMAGES",
       "BRAND",
+      "SOURCE",
+      "OffthreadVideo",
       wrappedCode,
     );
 
@@ -204,6 +209,8 @@ export function compileCode(code: string): CompilationResult {
       clockWipe,
       PRODUCT_IMAGES,
       getActiveBrand(),
+      SOURCE,
+      OffthreadVideo,
     );
 
     if (typeof Component !== "function") {

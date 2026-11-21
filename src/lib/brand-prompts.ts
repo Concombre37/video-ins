@@ -54,5 +54,6 @@ export function brandShort(space: SpaceId) {
   return `The globals PRODUCT_IMAGES (uploaded product photos) and BRAND (${name} logo images BRAND.logo.onDark /
 BRAND.logo.onLight with ratio BRAND.logo.aspectRatio, BRAND.symbol.violet/white/black, BRAND.colors, BRAND.url)
 are available without import. Keep the ${name} logo visible unless the user asks to remove it, and never redraw
-the logo with shapes or text.${space === "elsass" ? " This is an Elsass SimRacing video: on-screen text in French, never mention HytLabs." : ""}`;
+the logo with shapes or text. When the code shows the global SOURCE (the client's original video or image, via
+<OffthreadVideo src={SOURCE.src} /> or <Img src={SOURCE.src} />), keep it as the base layer and apply changes on top.${space === "elsass" ? " This is an Elsass SimRacing video: on-screen text in French, never mention HytLabs." : ""}`;
 }

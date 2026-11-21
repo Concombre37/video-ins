@@ -9,6 +9,7 @@ import { AnimationPlayer } from "../../components/AnimationPlayer";
 import { ChatSidebar, type ChatSidebarRef } from "../../components/ChatSidebar";
 import { CodeEditor } from "../../components/CodeEditor";
 import { PageLayout } from "../../components/PageLayout";
+import { setSource } from "../../remotion/source-media";
 import { SpaceProvider } from "../../components/SpaceProvider";
 import { TabPanel } from "../../components/TabPanel";
 import { VideoSettingsPanel } from "../../components/VideoSettingsPanel";
@@ -298,7 +299,10 @@ function GeneratePageContent() {
 
   // Ouverture d'un projet depuis l'historique (?project=<id>)
   useEffect(() => {
-    if (!projectParam) return;
+    if (!projectParam) {
+      setSource(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -307,6 +311,12 @@ function GeneratePageContent() {
         const p = await res.json();
         if (cancelled) return;
         setProductImages(p.productImages ?? []);
+        // projet de retouche : le média d'origine du client sert de fond (globale SOURCE)
+        setSource(
+          p.source
+            ? { ...p.source, src: `/api/media/${p.source.mediaId}/file?v=${p.source.version}` }
+            : null,
+        );
         const restored: ConversationMessage[] = (p.messages ?? []).map((m: StoredMessage, i: number) => ({
           id: `${m.role}-restored-${i}`,
           role: m.role,
