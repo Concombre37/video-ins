@@ -27,11 +27,17 @@ export const DynamicComp: React.FC = () => {
     musicVolume?: number;
     space?: string;
     /** rendu serveur d'une retouche : fichier d'origine copié dans le dossier public du rendu */
-    source?: (Omit<SourceMedia, "src"> & { file: string }) | null;
+    source?: (Omit<SourceMedia, "src" | "assets"> & { file: string; assets?: Record<string, string> }) | null;
   };
   // Rendu serveur : identité de l'espace et média d'origine
   if (isSpaceId(space)) setActiveBrand(space);
-  if (source?.file) setSource({ ...source, src: staticFile(source.file) });
+  if (source?.file) {
+    setSource({
+      ...source,
+      src: staticFile(source.file),
+      assets: Object.fromEntries(Object.entries(source.assets ?? {}).map(([k, f]) => [k, staticFile(f)])),
+    });
+  }
   // Rendu CLI / Lambda : les photos produits arrivent via les props
   if (Array.isArray(productImages) && productImages.length > 0) {
     setProductImages(productImages);

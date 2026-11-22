@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readJson, withLock, writeJson } from "./json-file";
 import { spaceDir } from "./space-data";
+import type { SourceRole } from "./source-roles";
 import type { SpaceId } from "./spaces";
 
 /**
@@ -10,10 +11,22 @@ import type { SpaceId } from "./spaces";
  *   <espace>/media/<id>/meta.json      fiche (titre, type, versions…)
  *   <espace>/media/<id>/v<n>.<ext>     chaque version du fichier (une retouche livrée = nouvelle version)
  *   <espace>/media/<id>/poster.jpg     image d'aperçu (facultative)
+ *   <espace>/media/<id>/sources/<nom>  fichiers source de la vidéo (projet de montage, plaque sans texte,
+ *                                      pistes séparées : musique, voix off, bruitages…)
  * Les vidéos créées dans le studio restent dans les projets (history-store) ; la page Médiathèque
  * affiche les deux.
  */
 export type MediaKind = "video" | "image" | "audio" | "document" | "font" | "fichier";
+
+/**
+ * Pistes séparées d'une version (noms de fichiers source, chacune à la durée exacte de la vidéo et calée
+ * sur elle). Les retouches musique / voix off remplacent alors vraiment une piste au lieu de s'empiler.
+ */
+export interface VersionStems {
+  music?: string;
+  voice?: string;
+  sfx?: string;
+}
 
 export interface MediaVersion {
   n: number;
@@ -22,6 +35,20 @@ export interface MediaVersion {
   createdAt: number;
   by: string;
   note?: string;
+  stems?: VersionStems;
+}
+
+export { SOURCE_ROLE_LABEL, type SourceRole } from "./source-roles";
+
+export interface MediaSourceFile {
+  /** nom du fichier dans sources/ (sert d'identifiant) */
+  name: string;
+  label: string;
+  role: SourceRole;
+  size: number;
+  createdAt: number;
+  /** piste interne aux retouches (pistes séparées générées) : cachée de la liste par défaut */
+  internal?: boolean;
 }
 
 export interface MediaItem {
@@ -39,6 +66,8 @@ export interface MediaItem {
   hasPoster: boolean;
   /** copie légère (MP4 H.264 1080p) pour lire dans le navigateur les originaux lourds (4K, HEVC…) */
   hasPreview?: boolean;
+  /** fichiers source (dossier sources/) */
+  sources?: MediaSourceFile[];
 }
 
 const EXT: Record<string, { kind: MediaKind; type: string }> = {
@@ -60,7 +89,11 @@ const EXT: Record<string, { kind: MediaKind; type: string }> = {
   ai: { kind: "fichier", type: "application/postscript" },
   eps: { kind: "fichier", type: "application/postscript" },
   zip: { kind: "fichier", type: "application/zip" },
+  m4a: { kind: "audio", type: "audio/mp4" },
 };
+const SOURCE_TYPES: Record<string, string> = { tsx: "text/plain; charset=utf-8", ts: "text/plain; charset=utf-8", py: "text/plain; charset=utf-8", md: "text/plain; charset=utf-8", txt: "text/plain; charset=utf-8", json: "application/json" };
+export const sourceTypeOf = (name: string) => typeOfExt(extOf(name))?.type ?? SOURCE_TYPES[extOf(name)] ?? "application/octet-stream";
+const SOURCE_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
 
 export const MAX_UPLOAD = 400 * 1024 * 1024;
 const ID_RE = /^[a-z0-9-]{6,64}$/;
@@ -122,7 +155,7 @@ export async function createMedia(
 export async function addVersion(
   space: SpaceId,
   id: string,
-  input: { fileName: string; data: Uint8Array; by: string; note?: string },
+  input: { fileName: string; data: Uint8Array; by: string; note?: string; stems?: VersionStems },
 ) {
   return withLock(metaFile(space, id), async () => {
     const item = await getMedia(space, id);
@@ -133,7 +166,7 @@ export async function addVersion(
     const file = `v${n}.${ext}`;
     await fs.writeFile(path.join(dir(space, id), file), input.data);
     const now = Date.now();
-    item.versions.push({ n, file, size: input.data.length, createdAt: now, by: input.by, note: input.note?.slice(0, 500) });
+    item.versions.push({ n, file, size: input.data.length, createdAt: now, by: input.by, note: input.note?.slice(0, 500), stems: input.stems });
     item.updatedAt = now;
     await writeJson(metaFile(space, id), item);
     return item;
@@ -169,4 +202,46 @@ export function previewPath(space: SpaceId, id: string) {
 
 export function posterPath(space: SpaceId, id: string) {
   return ID_RE.test(id) ? path.join(dir(space, id), "poster.jpg") : null;
+}
+
+/* ── Fichiers source ───────────────────────────────────────────── */
+
+export function sourcePath(space: SpaceId, id: string, name: string) {
+  return ID_RE.test(id) && SOURCE_RE.test(name) && !name.includes("..") ? path.join(dir(space, id), "sources", name) : null;
+}
+
+/** Ajoute (ou remplace) un fichier source. `data` ou `from` (chemin local, lien dur si possible). */
+export async function putSource(
+  space: SpaceId,
+  id: string,
+  input: { name: string; label: string; role: SourceRole; data?: Uint8Array; from?: string; internal?: boolean },
+) {
+  const p = sourcePath(space, id, input.name);
+  if (!p) throw new Error("Nom de fichier source invalide");
+  return withLock(metaFile(space, id), async () => {
+    const item = await getMedia(space, id);
+    if (!item) throw new Error("Média introuvable");
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.rm(p, { force: true });
+    if (input.data) await fs.writeFile(p, input.data);
+    else if (input.from) await fs.link(input.from, p).catch(() => fs.copyFile(input.from!, p));
+    else throw new Error("Fichier source vide");
+    const size = (await fs.stat(p)).size;
+    const entry: MediaSourceFile = { name: input.name, label: input.label.slice(0, 200), role: input.role, size, createdAt: Date.now(), internal: input.internal || undefined };
+    item.sources = [...(item.sources ?? []).filter((x) => x.name !== input.name), entry];
+    await writeJson(metaFile(space, id), item);
+    return entry;
+  });
+}
+
+export async function deleteSource(space: SpaceId, id: string, name: string) {
+  const p = sourcePath(space, id, name);
+  if (!p) return;
+  await withLock(metaFile(space, id), async () => {
+    const item = await getMedia(space, id);
+    if (!item) return;
+    item.sources = (item.sources ?? []).filter((x) => x.name !== name);
+    await fs.rm(p, { force: true });
+    await writeJson(metaFile(space, id), item);
+  });
 }

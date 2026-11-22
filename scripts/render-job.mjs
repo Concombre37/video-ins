@@ -4,6 +4,7 @@
  *   node scripts/render-job.mjs <job.json>
  * job.json : { code, space, fps, durationInFrames, width, height, format, still,
  *              sourceFile (chemin local du média d'origine), source: {type,width,height,durationInSeconds},
+ *              assetFiles: { "<nom>": chemin local } (fichiers source exposés au code par SOURCE.assets),
  *              productImages, musicSrc, musicVolume, out }
  * Écrit la progression sur stdout (« PROGRESS 0.42 ») et termine par « DONE <chemin> ».
  */
@@ -26,7 +27,17 @@ if (job.sourceFile) {
   } catch {
     fs.copyFileSync(job.sourceFile, path.join(publicDir, name));
   }
-  source = { ...job.source, file: name };
+  source = { ...job.source, file: name, assets: {} };
+  if (job.assetFiles) fs.mkdirSync(path.join(publicDir, "assets"));
+  for (const [n, f] of Object.entries(job.assetFiles ?? {})) {
+    const rel = `assets/${path.basename(n)}`;
+    try {
+      fs.linkSync(f, path.join(publicDir, rel));
+    } catch {
+      fs.copyFileSync(f, path.join(publicDir, rel));
+    }
+    source.assets[n] = rel;
+  }
 }
 
 // musique d'un projet du studio : « /music/x.mp3 » (dossier public) → data URL
@@ -59,7 +70,7 @@ try {
   const composition = await selectComposition({ serveUrl, id: "DynamicComp", inputProps, browserExecutable });
   fs.mkdirSync(path.dirname(job.out), { recursive: true });
   if (job.still) {
-    await renderStill({ serveUrl, composition, inputProps, output: job.out, frame: 0, browserExecutable, imageFormat: job.out.endsWith(".png") ? "png" : "jpeg", jpegQuality: 92 });
+    await renderStill({ serveUrl, composition, inputProps, output: job.out, frame: job.frame ?? 0, browserExecutable, imageFormat: job.out.endsWith(".png") ? "png" : "jpeg", jpegQuality: 92 });
   } else {
     let last = -1;
     await renderMedia({

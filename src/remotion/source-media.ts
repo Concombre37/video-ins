@@ -4,6 +4,7 @@
  *   SOURCE.type    "video" | "image" | null (null = projet sans média d'origine)
  *   SOURCE.src     URL du fichier (aperçu : /api/media/<id>/file ; rendu serveur : staticFile)
  *   SOURCE.width / SOURCE.height / SOURCE.durationInSeconds
+ *   SOURCE.assets  { "<nom>": URL } fichiers source du média utilisables dans le code (logo, police…)
  */
 export interface SourceMedia {
   type: "video" | "image" | null;
@@ -11,10 +12,11 @@ export interface SourceMedia {
   width: number;
   height: number;
   durationInSeconds: number;
+  assets: Record<string, string>;
 }
 
-export const SOURCE: SourceMedia = { type: null, src: "", width: 0, height: 0, durationInSeconds: 0 };
+export const SOURCE: SourceMedia = { type: null, src: "", width: 0, height: 0, durationInSeconds: 0, assets: {} };
 
 export function setSource(s: Partial<SourceMedia> | null) {
-  Object.assign(SOURCE, { type: null, src: "", width: 0, height: 0, durationInSeconds: 0 }, s ?? {});
+  Object.assign(SOURCE, { type: null, src: "", width: 0, height: 0, durationInSeconds: 0, assets: {} }, s ?? {});
 }

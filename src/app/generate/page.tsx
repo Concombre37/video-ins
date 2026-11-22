@@ -314,7 +314,15 @@ function GeneratePageContent() {
         // projet de retouche : le média d'origine du client sert de fond (globale SOURCE)
         setSource(
           p.source
-            ? { ...p.source, src: `/api/media/${p.source.mediaId}/file?v=${p.source.version}` }
+            ? {
+                ...p.source,
+                src: p.source.plate
+                  ? `/api/media/${p.source.mediaId}/sources/${p.source.plate}`
+                  : `/api/media/${p.source.mediaId}/file?v=${p.source.version}`,
+                assets: Object.fromEntries(
+                  ((p.source.assets ?? []) as string[]).map((n) => [n, `/api/media/${p.source.mediaId}/sources/${encodeURIComponent(n)}`]),
+                ),
+              }
             : null,
         );
         const restored: ConversationMessage[] = (p.messages ?? []).map((m: StoredMessage, i: number) => ({

@@ -5,6 +5,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { useSpace } from "@/components/SpaceProvider";
 import type { ProjectSummary } from "@/lib/history-store";
 import type { MediaItem } from "@/lib/media-store";
+import { SOURCE_ROLE_LABEL, type SourceRole } from "@/lib/source-roles";
 import { cn } from "@/lib/utils";
 import { MUSIC_TRACKS } from "@/lib/video-settings";
 import { DEFAULT_VOICE, MAX_TTS_CHARS } from "@/lib/voices";
@@ -580,6 +581,88 @@ function RequestForm({ e, timecode, audios, onDone }: { e: Entry; timecode?: str
   );
 }
 
+/** Fichiers source d'une vidéo : projet de montage, vidéo sans textes, pistes séparées… */
+function SourceFiles({ item, admin, onChanged }: { item: MediaItem; admin: boolean; onChanged: () => void }) {
+  const [showAll, setShowAll] = useState(false);
+  const [role, setRole] = useState<SourceRole>("projet");
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const all = item.sources ?? [];
+  const list = all.filter((x) => showAll || !x.internal);
+  const url = (name: string, download?: boolean) => `/api/media/${item.id}/sources/${encodeURIComponent(name)}${download ? "?download" : ""}`;
+  if (!all.length && !admin) return null;
+  const send = async (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    form.set("role", role);
+    form.set("label", file.name);
+    setError(null);
+    try {
+      setProgress(0);
+      await upload(`/api/media/${item.id}/sources`, form, setProgress);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProgress(null);
+    }
+  };
+  const remove = async (name: string) => {
+    if (!confirm("Supprimer ce fichier source ?")) return;
+    await fetch(url(name), { method: "DELETE" });
+    onChanged();
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h3 className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Fichiers source
+        {all.some((x) => x.internal) && (
+          <button onClick={() => setShowAll(!showAll)} className="text-[11px] font-normal normal-case tracking-normal text-primary hover:underline">
+            {showAll ? "masquer les pistes des retouches" : "voir les pistes des retouches"}
+          </button>
+        )}
+      </h3>
+      {list.length === 0 && <p className="text-xs text-muted-foreground">Aucun fichier source.</p>}
+      {list.map((x) => (
+        <div key={x.name} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs">
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-foreground" title={x.label}>{x.label}</span>
+            <span className="text-[11px] text-muted-foreground">
+              {SOURCE_ROLE_LABEL[x.role]} · {mb(x.size)}
+            </span>
+          </span>
+          {/\.(mp3|wav|m4a)$/.test(x.name) && <PlayButton src={url(x.name)} label="" />}
+          <a href={url(x.name, true)} className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground" title="Télécharger">
+            <Download className="w-3.5 h-3.5" />
+          </a>
+          {admin && (
+            <button onClick={() => remove(x.name)} className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-red-400" title="Supprimer">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      ))}
+      {admin && (
+        <div className="flex items-center gap-2">
+          <select value={role} onChange={(ev) => setRole(ev.target.value as SourceRole)} className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs text-foreground">
+            {Object.entries(SOURCE_ROLE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground hover:border-primary hover:text-foreground">
+            {progress != null ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {progress != null ? `${Math.round(progress * 100)} %` : "Ajouter"}
+            <input type="file" className="hidden" disabled={progress != null} onChange={(ev) => ev.target.files?.[0] && send(ev.target.files[0])} />
+          </label>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
 function Viewer({ e, admin, onRequest, onChanged }: { e: Entry; admin: boolean; onRequest: (tc?: string) => void; onChanged: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const versions = e.kind === "media" ? [...e.item.versions].reverse() : [];
@@ -664,12 +747,15 @@ function Viewer({ e, admin, onRequest, onChanged }: { e: Entry; admin: boolean; 
                 >
                   <span className="font-semibold">Version {x.n}</span>
                   {i === 0 && " · la plus récente"} · {dateFmt(x.createdAt)} · {mb(x.size)}
+                  {x.stems && <span className="ml-1 rounded bg-secondary px-1 py-0.5 text-[10px] text-muted-foreground">pistes séparées</span>}
                   {x.note && <span className="mt-1 block text-muted-foreground">{x.note}</span>}
                 </button>
               );
             })}
           </div>
         )}
+
+        {e.kind === "media" && <SourceFiles item={e.item} admin={admin} onChanged={onChanged} />}
 
         {admin && e.kind === "media" && (
           <div className="flex flex-col gap-2 rounded-xl border border-dashed border-border p-3">

@@ -40,3 +40,10 @@ Remotion « Prompt to Motion Graphics » adapté à Claude. Interface en frança
   (OpenRouter) ; voix off : ElevenLabs (`ELEVENLABS_API_KEY`, voix choisies dans `src/lib/voices.ts`, cache
   DATA_DIR/tts-cache partagé avec l'écoute `/api/voices/preview`). Code : `src/lib/audio-ai.ts`, `handleAudio`.
 - Emails au client seulement si `notify` est coché sur la demande (non par défaut, modifiable sur /requests).
+- Fichiers source d'un média (`sources/` du média, `putSource`, panneau « Fichiers source » de la médiathèque,
+  API `/api/media/<id>/sources`) : projet de montage, plaque (vidéo sans textes), pistes séparées, logo, police.
+  Une version peut avoir des pistes séparées (`stems` : musique, voix, bruitages, calées sur la vidéo) :
+  les retouches musique / voix remplacent alors la bonne piste, et une retouche visuelle de même durée garde
+  le son de la version actuelle. Un projet `rt-` peut prendre une plaque (`source.plate`) et des fichiers
+  (`source.assets`, globale `SOURCE.assets`) : le teaser Elsass (es-759ad7aa2f8b) est ainsi en vrais calques.
+  Import : /root/video-studio-deploy/import/attach-sources.py (sources préparées dans /root/elsass-pubs/exports/sources-studio).

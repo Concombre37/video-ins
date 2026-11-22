@@ -69,6 +69,10 @@ export interface ProjectSource {
   width: number;
   height: number;
   durationInSeconds: number;
+  /** fichier source du média servant de fond à la place de la version (ex. vidéo sans textes) */
+  plate?: string;
+  /** fichiers source du média utilisables dans le code : SOURCE.assets["nom"] (logo, police, image…) */
+  assets?: string[];
 }
 
 export interface RenderInfo {

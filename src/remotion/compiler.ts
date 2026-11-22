@@ -18,6 +18,8 @@ import {
   Img,
   OffthreadVideo,
   Sequence,
+  continueRender,
+  delayRender,
   interpolate,
   spring,
   useCurrentFrame,
@@ -110,6 +112,9 @@ export function compileCode(code: string): CompilationResult {
       Sequence,
       Img,
       OffthreadVideo,
+      // chargement d'une police ou d'un fichier avant de dessiner (SOURCE.assets)
+      delayRender,
+      continueRender,
     };
 
     const wrappedCode = `${transpiled.code}\nreturn DynamicAnimation;`;
