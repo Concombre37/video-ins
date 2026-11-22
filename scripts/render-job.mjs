@@ -70,7 +70,7 @@ try {
   const composition = await selectComposition({ serveUrl, id: "DynamicComp", inputProps, browserExecutable });
   fs.mkdirSync(path.dirname(job.out), { recursive: true });
   if (job.still) {
-    await renderStill({ serveUrl, composition, inputProps, output: job.out, frame: job.frame ?? 0, browserExecutable, imageFormat: job.out.endsWith(".png") ? "png" : "jpeg", jpegQuality: 92 });
+    await renderStill({ serveUrl, composition, inputProps, output: job.out, frame: job.frame ?? 0, browserExecutable, ...(job.out.endsWith(".png") ? { imageFormat: "png" } : { imageFormat: "jpeg", jpegQuality: 92 }) });
   } else {
     let last = -1;
     await renderMedia({

@@ -212,7 +212,8 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).p
 /* ── IA ────────────────────────────────────────────────────────── */
 
 function instruction(r: RetouchRequest) {
-  const client = r.messages.filter((m) => !m.staff);
+  // messages du demandeur (un admin qui fait sa propre demande compte aussi), hors réponses de l'assistant
+  const client = r.messages.filter((m) => (!m.staff || m.by === r.by) && m.by !== "ia@hytlabs.com");
   const last = client[client.length - 1]?.text ?? "";
   const earlier = r.messages.slice(0, -1).map((m) => `${m.staff ? "Équipe" : "Client"} : ${m.text}`).join("\n");
   return { last, earlier };
@@ -686,14 +687,15 @@ async function handleAudio({ space, id }: Job, r: RetouchRequest) {
 }
 
 /**
- * Son d'une retouche visuelle : si la dernière version a des pistes séparées (son monté à part) et la même
- * durée, la nouvelle image garde ce son à l'identique. Sinon on garde le son du rendu.
+ * Son d'une retouche visuelle : le son se modifie à part (retouches musique / voix off). Si la durée n'a pas
+ * changé, la nouvelle image garde à l'identique le son de la dernière version (et ses pistes séparées).
+ * Sinon on garde le son du rendu.
  */
-async function keepAudio(space: SpaceId, mediaId: string, rendered: Uint8Array): Promise<{ data: Uint8Array; stems: VersionStems } | null> {
+async function keepAudio(space: SpaceId, mediaId: string, rendered: Uint8Array): Promise<{ data: Uint8Array; stems?: VersionStems } | null> {
   const item = await getMedia(space, mediaId);
   const last = item?.versions[item.versions.length - 1];
-  const f = item && last?.stems ? mediaFilePath(space, item) : null;
-  if (!f || !last?.stems) return null;
+  const f = item && last ? mediaFilePath(space, item) : null;
+  if (!f || !last) return null;
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "son-"));
   try {
     const video = path.join(tmp, "image.mp4");
